@@ -81,7 +81,41 @@ button.b{
   font-weight:600;cursor:pointer;min-height:38px
 }
 button.b.ghost{background:#fff;color:var(--navy)}
-label.b{border:1px solid var(--navy);background:#fff;color:var(--navy);padding:9px 14px;font-weight:600;min-height:38px}
+/* ---- temp power stands ---- */
+#v-tools .bar{display:flex;gap:9px;align-items:flex-end;flex-wrap:wrap;
+  padding:10px;background:#f0f2f4;border:1px solid var(--line);margin-top:11px}
+#v-tools .bar.plain{background:var(--paper);border:0;padding:0}
+#v-tools .bar .gap{flex:1 1 20px}
+#v-tools .bar label.f{white-space:nowrap}
+#v-tools .bar label.f.grow{flex:1 1 220px;min-width:180px}
+#v-tools .bar label.f.grow input{width:100%}
+#v-tools .bar .count{font-size:12px;color:var(--ink-2);font-weight:600;line-height:38px;padding-right:2px}
+#v-tools .bar .count strong{font-size:15px;color:var(--ink)}
+#v-tools label.f .opt{font-weight:500;color:#8a9298;text-transform:none}
+#v-tools label.f.chk-f{flex-direction:row;align-items:center;gap:6px;height:38px;color:var(--ink);font-weight:600}
+#v-tools label.f.chk-f input{min-height:0;margin:0}
+#v-tools label.b.file{display:inline-flex;align-items:center;justify-content:center;
+  border:1px solid var(--navy);background:#fff;color:var(--navy);padding:0 14px;height:38px;
+  font-weight:600;cursor:pointer;white-space:nowrap}
+#v-tools label.b.file:hover{background:#f3f6f9}
+#v-tools .bar button.b{height:38px;min-height:38px;padding:0 14px}
+#v-tools .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px;align-items:start;margin-top:12px}
+#v-tools .col{border:1px solid var(--line-2)}
+#v-tools .col .nm{display:flex;align-items:center;gap:5px}
+#v-tools .col th.n,#v-tools .col td.n{width:86px;white-space:nowrap}
+#v-tools .col .ren{opacity:0;transition:opacity .12s}
+#v-tools .col tr:hover .ren,#v-tools .col .ren:focus{opacity:1}
+#v-tools .col>h3{margin:0;padding:7px 10px;background:var(--field);border-bottom:1px solid var(--line-2);
+  font-size:11px;letter-spacing:.03em;font-weight:700;color:var(--ink-2);text-transform:uppercase}
+#v-tools .col table{border-left:0;border-right:0}
+#v-tools .col th:first-child,#v-tools .col td:first-child{border-left:0}
+#v-tools .col th:last-child,#v-tools .col td:last-child{border-right:0}
+#v-tools .col .empty{padding:20px 12px;font-size:13px}
+#v-tools label.inline{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--ink-2);cursor:pointer}
+#v-tools #tlMsg .flag{margin-bottom:0}
+#v-tools td input[type=text]{min-height:32px;padding:4px 6px}
+#v-tools .ren{border:0;background:none;color:#9aa3a9;cursor:pointer;padding:0 3px;font-size:12px}
+#v-tools .ren:hover{color:var(--navy)}
 button.b.red{background:var(--red);border-color:var(--red)}
 button.b.sm{padding:5px 9px;min-height:30px;font-size:13px}
 button.b:disabled{opacity:.45;cursor:not-allowed}
@@ -298,15 +332,14 @@ tfoot td{background:#eef1f3;font-weight:700}
   <div class="card"><h2>Temp power stands<span class="tag">Where every stand is, and what shape it is in</span></h2>
     <div class="body">
       <div id="tlStrip"></div>
-      <div class="row" style="margin-top:12px">
-        <label class="f">Type<input type="text" id="tlType" list="tlTypes" placeholder="Weather Proof Panel with Rec" style="width:260px"></label>
+      <div class="bar" style="margin-top:12px">
+        <label class="f">Type<input type="text" id="tlType" list="tlTypes" placeholder="Weather Proof Panel with Rec" style="width:250px"></label>
         <datalist id="tlTypes"></datalist>
-        <label class="f">Mark # <span class="mini">(optional)</span><input type="text" id="tlMark" placeholder="TPS-012" style="width:120px"></label>
-        <label class="f">How many<input type="number" id="tlQty" min="1" value="1" style="width:80px"></label>
+        <label class="f">Mark&nbsp;#<input type="text" id="tlMark" placeholder="optional" style="width:110px"></label>
+        <label class="f">How many<input type="number" id="tlQty" min="1" value="1" style="width:76px"></label>
         <button class="b" id="tlAdd">Add to shop inventory</button>
-        <span class="spacer"></span>
-        <label class="b ghost" style="display:inline-flex;align-items:center;cursor:pointer">Import inventory form (.xlsx)
-          <input type="file" id="tlImport" accept=".xlsx" hidden></label>
+        <span class="gap"></span>
+        <label class="b ghost file">Import form (.xlsx)<input type="file" id="tlImport" accept=".xlsx" hidden></label>
         <button class="b red" id="tlExport">Inventory form (Excel)</button>
       </div>
       <div id="tlMsg"></div>
@@ -314,31 +347,31 @@ tfoot td{background:#eef1f3;font-weight:700}
   </div>
 
   <div class="card"><h2>Breakdown</h2><div class="body">
-    <div class="grid2" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));align-items:start">
-      <div><p class="mini" style="margin:0 0 5px"><strong>By type</strong></p><div id="tlByType"></div></div>
-      <div><p class="mini" style="margin:0 0 5px"><strong>By job PO</strong></p><div id="tlByPo"></div></div>
-      <div><p class="mini" style="margin:0 0 5px"><strong>Sent to other shops</strong></p><div id="tlByShop"></div></div>
+    <div class="col"><h3>By type</h3><div id="tlByType"></div></div>
+    <div class="cols">
+      <div class="col"><h3>By job PO</h3><div id="tlByPo"></div></div>
+      <div class="col"><h3>Sent to other shops</h3><div id="tlByShop"></div></div>
     </div>
   </div></div>
 
   <div class="card"><h2>Repair tickets<span class="tag" id="tlTickTag"></span></h2><div class="body">
     <div id="tlTickets"></div>
-    <p class="hint" style="margin-top:8px"><label><input type="checkbox" id="tlShowDone"> Show finished tickets</label></p>
+    <label class="inline" style="margin-top:9px"><input type="checkbox" id="tlShowDone"> Show finished tickets</label>
   </div></div>
 
   <div class="card"><h2>Inventory<span class="tag" id="tlCount"></span></h2><div class="body">
-    <div class="row">
-      <label class="f">Where<select id="tlFLoc"></select></label>
-      <label class="f">Status<select id="tlFStat">
+    <div class="bar plain">
+      <label class="f">Where<select id="tlFLoc" style="width:230px"></select></label>
+      <label class="f">Status<select id="tlFStat" style="width:150px">
         <option value="">All</option><option value="ready">Ready for service</option><option value="repair">Needs repair</option>
         <option value="job">On a job</option><option value="other">At another shop</option>
       </select></label>
-      <label class="f">Type<select id="tlFType"></select></label>
+      <label class="f">Type<select id="tlFType" style="width:180px"></select></label>
       <label class="f">Find<input type="text" id="tlFind" placeholder="mark # or note" style="width:150px"></label>
     </div>
-    <div class="row" style="margin-top:10px;padding:9px 10px;background:#f0f2f4;border:1px solid var(--line)">
-      <span class="mini"><strong id="tlSelN">0</strong> selected</span>
-      <label class="f">Do<select id="tlAct">
+    <div class="bar">
+      <span class="count"><strong id="tlSelN">0</strong> selected</span>
+      <label class="f">Do<select id="tlAct" style="width:190px">
         <option value="">— pick an action —</option>
         <option value="send">Send to a job</option>
         <option value="receive">Receive back at the shop</option>
@@ -347,17 +380,16 @@ tfoot td{background:#eef1f3;font-weight:700}
         <option value="ticket">Open a repair ticket</option>
         <option value="remove">Remove from inventory</option>
       </select></label>
-      <label class="f" id="tlActJobW" hidden>PO<select id="tlActJob"></select></label>
+      <label class="f" id="tlActJobW" hidden>PO<select id="tlActJob" style="width:200px"></select></label>
       <label class="f" id="tlActShopW" hidden>Shop<input type="text" id="tlActShop" list="tlShops" placeholder="Knoxville shop" style="width:170px"><datalist id="tlShops"></datalist></label>
       <label class="f" id="tlActDateW" hidden>Date<input type="date" id="tlActDate" min="2015-01-01" max="2100-12-31"></label>
-      <label class="f" id="tlActRepW" hidden style="flex-direction:row;align-items:center;gap:6px;padding-top:16px"><input type="checkbox" id="tlActRep"> Needs repair</label>
-      <label class="f" id="tlActIssueW" hidden style="flex:1 1 220px">What is wrong<input type="text" id="tlActIssue" placeholder="Broken receptacle, cracked cover…"></label>
+      <label class="f chk-f" id="tlActRepW" hidden><input type="checkbox" id="tlActRep"> Needs repair</label>
+      <label class="f grow" id="tlActIssueW" hidden>What is wrong<input type="text" id="tlActIssue" placeholder="Broken receptacle, cracked cover…"></label>
       <button class="b" id="tlGo" disabled>Go</button>
     </div>
-    <div id="tlTable" style="margin-top:10px"></div>
+    <div id="tlTable" style="margin-top:11px"></div>
   </div></div>
 </section>
-
 <!-- ======================= REPORTS ======================= -->
 <section id="v-reports" hidden>
   <div class="card"><h2>Reports</h2><div class="body">
@@ -3041,7 +3073,7 @@ function renderTools(){
     '<table><thead><tr><th>Type</th><th class="n">Ready</th><th class="n">Repair</th><th class="n">On jobs</th><th class="n">Other shops</th><th class="n">Total</th></tr></thead><tbody>'+
     Object.entries(tb).sort((a,b)=>a[1].name.localeCompare(b[1].name)).map(([key,b])=>{
       ["ready","repair","job","other","n"].forEach(k=>tot[k]+=b[k]);
-      return '<tr><td>'+esc(b.name)+' <button class="x" data-tren="'+esc(key)+'" title="Rename this type everywhere" style="padding:0 4px">✎</button></td><td class="n num">'+b.ready+'</td><td class="n num"'+(b.repair?' style="color:var(--red);font-weight:700"':"")+'>'+b.repair+'</td><td class="n num">'+b.job+'</td><td class="n num">'+b.other+'</td><td class="n num"><strong>'+b.n+'</strong></td></tr>';
+      return '<tr><td><div class="nm"><span>'+esc(b.name)+'</span><button class="ren" data-tren="'+esc(key)+'" title="Rename this type everywhere">✎</button></div></td><td class="n num">'+b.ready+'</td><td class="n num"'+(b.repair?' style="color:var(--red);font-weight:700"':"")+'>'+b.repair+'</td><td class="n num">'+b.job+'</td><td class="n num">'+b.other+'</td><td class="n num"><strong>'+b.n+'</strong></td></tr>';
     }).join("")+'</tbody><tfoot><tr><td>Total</td><td class="n num">'+tot.ready+'</td><td class="n num">'+tot.repair+'</td><td class="n num">'+tot.job+'</td><td class="n num">'+tot.other+'</td><td class="n num">'+tot.n+'</td></tr></tfoot></table>';
 
   $("tlByType").querySelectorAll("[data-tren]").forEach(el=>el.onclick=()=>{
