@@ -361,24 +361,75 @@ input[type=date]{text-align:left;min-width:0}
   #pfItems td.i-x::before{display:none}
 }
 
-/* the stock list turns into cards on a phone, so the box you type in is
-   never hiding off the side of a scrolling table */
+/* a quantity stepper: thumbs beat a number keyboard on a phone */
+.stp{display:flex;align-items:stretch}
+.stp button{display:none}
+.stp input{flex:1;min-width:0}
+
+/* ---------- the two heavy forms, rebuilt for a phone ---------- */
 @media (max-width:700px){
+  /* temp panel stock: one tight row per stand */
   #tpStock .tscroll{overflow:visible}
   #tpStock table{min-width:0}
   #tpStock table,#tpStock tbody,#tpStock tr,#tpStock td{display:block;width:auto}
   #tpStock thead,#tpStock tfoot{display:none}
-  #tpStock tbody tr{border:1px solid var(--line);padding:9px 10px;margin-bottom:9px;background:#fff}
+  #tpStock tbody tr{border:1px solid var(--line);padding:9px 10px;margin-bottom:8px;background:#fff}
   #tpStock tbody tr:nth-child(even) td{background:transparent}
   #tpStock td{border:0;padding:0;text-align:left}
-  #tpStock td.s-name{font-weight:700;font-size:15px;color:var(--navy);margin-bottom:6px;line-height:1.3}
-  #tpStock td.s-n{display:inline-block;margin:0 14px 2px 0;font-size:12px;color:var(--ink-2);font-weight:600}
-  #tpStock td.s-n::before{content:attr(data-l) " ";font-weight:600;color:var(--ink-2)}
-  #tpStock td.qty{width:auto;margin-top:9px}
-  #tpStock td.qty::before{content:"How many you need";display:block;font-size:12px;
+  #tpStock td.s-name{font-weight:700;font-size:15.5px;color:var(--navy);line-height:1.25}
+  #tpStock td.s-n{display:inline;font-size:12.5px;color:var(--ink-2);font-weight:600}
+  #tpStock td.s-n::before{content:attr(data-l) " "}
+  #tpStock td.s-n::after{content:" · ";color:var(--line)}
+  #tpStock td.s-n:nth-last-of-type(2)::after{content:""}
+  #tpStock tbody tr td.s-n:first-of-type{margin-top:3px}
+  #tpStock td.qty{margin-top:8px}
+  #tpStock td.qty::before{content:attr(data-l);display:inline-block;font-size:12px;
     color:var(--ink-2);font-weight:600;margin-bottom:4px}
-  #tpStock td.qty input{width:100%;text-align:left;min-height:46px;font-size:17px}
+  #tpStock .stp{height:46px}
+  #tpStock .stp button{display:block;width:52px;border:1px solid var(--line);background:var(--field);
+    font-size:22px;font-weight:600;color:var(--navy);line-height:1;padding:0}
+  #tpStock .stp input{text-align:center;font-size:18px;font-weight:600;border-left:0;border-right:0;min-height:46px}
+
+  /* conduit bends: one card per bend, and only the boxes that bend needs */
+  .swipe{display:none}
+  #pfBends{min-width:0}
+  #pfBends,#pfBends tbody,#pfBends tr,#pfBends td{display:block;width:auto}
+  #pfBends thead{display:none}
+  #pfBends tbody tr{position:relative;border:1px solid var(--line);background:#fff;
+    padding:9px 10px 3px;margin-bottom:10px}
+  #pfBends tbody tr:nth-child(even) td{background:transparent}
+  #pfBends td{border:0;padding:0 0 8px;text-align:left}
+  #pfBends td::before{content:attr(data-l);display:block;font-size:12px;
+    color:var(--ink-2);font-weight:600;margin-bottom:3px}
+  #pfBends td.b-id{padding-bottom:9px}
+  #pfBends td.b-id::before{display:none}
+  #pfBends .bno{display:block;font-weight:700;color:var(--navy);font-size:15px;margin-bottom:7px}
+  #pfBends .bno::before{content:"Bend "}
+  #pfBends .kindsel{display:flex;border:1px solid var(--line)}
+  #pfBends .kindsel button{flex:1;border:0;border-right:1px solid var(--line);background:var(--field);
+    color:var(--ink-2);font-weight:600;font-size:13.5px;height:38px;padding:0}
+  #pfBends .kindsel button:last-child{border-right:0}
+  #pfBends .kindsel button[aria-pressed="true"]{background:var(--navy);color:#fff}
+  #pfBends td.half{display:inline-block;width:48.5%;vertical-align:top}
+  #pfBends td.half.r{margin-left:3%}
+  #pfBends td input,#pfBends td select{min-height:42px}
+  #pfBends td.b-x{position:absolute;top:4px;right:4px;padding:0;width:28px}
+  #pfBends td.b-x::before{display:none}
+  /* only the chosen kind's boxes */
+  #pfBends tr[data-kind="90"]   td.gkick,
+  #pfBends tr[data-kind="90"]   td.goff,
+  #pfBends tr[data-kind="90"]   td.gnip,
+  #pfBends tr[data-kind="kick"] td.g90,
+  #pfBends tr[data-kind="kick"] td.goff,
+  #pfBends tr[data-kind="kick"] td.gnip,
+  #pfBends tr[data-kind="off"]  td.g90,
+  #pfBends tr[data-kind="off"]  td.gkick,
+  #pfBends tr[data-kind="off"]  td.gnip,
+  #pfBends tr[data-kind="nip"]  td.g90,
+  #pfBends tr[data-kind="nip"]  td.gkick,
+  #pfBends tr[data-kind="nip"]  td.goff{display:none}
 }
+.kindsel{display:none}
 
 /* ================= wire room ================= */
 /* =====================================================================
@@ -5017,7 +5068,7 @@ $("xGoDaily").onclick = async ()=>{
    blob: the kiosk writes punches and requests, the office writes job forms and
    rates, and each row carries its own updated_at. Newest write for a given row
    wins; nothing else on the table is touched. */
-const SB = { client:null, on:false, busy:false, last:null, snap:{}, err:"" };
+const SB = { client:null, on:false, busy:false, last:null, snap:{}, err:"", bad:new Set() };
 const SB_TABLES = ["employees","pms","jobs","savings","punches","timeoff","tools","tickets","orders"];
 const stampNow = () => new Date().toISOString();
 
@@ -5240,10 +5291,12 @@ async function sbPull(){
   if(!SB.on || SB.busy) return;
   SB.busy = true;
   const trouble = [];
+  SB.bad = SB.bad || new Set();
   try{
     for(const k of SB_TABLES){
       const {data,error} = await SB.client.from(k).select("id,data,updated_at");
-      if(error){ trouble.push(k+": "+error.message); continue; }
+      if(error){ trouble.push(k+": "+error.message); SB.bad.add(k); continue; }
+      SB.bad.delete(k);
       const mine = new Map((db[k]||[]).filter(o=>o&&o.id).map(o=>[String(o.id),o]));
       (data||[]).forEach(r=>{
         if(!r || !r.id) return;
@@ -6499,24 +6552,41 @@ function pfRowBend(v){
   v = v||{};
   const tb = $("pfBends").tBodies[0];
   const tr = document.createElement("tr");
-  const sel = (cls, list, val) => '<td><select class="'+cls+'"><option value=""></option>'+
-      list.map(s=>'<option'+(s===val?" selected":"")+">"+esc(s)+"</option>").join("")+"</select></td>";
-  const tx = (cls, val, ph, extra) => '<td'+(extra||"")+'><input type="text" class="'+cls+'" value="'+esc(val||"")+'"'+(ph?' placeholder="'+ph+'"':"")+"></td>";
-  tr.innerHTML = '<td class="c n"></td>'+
-    '<td><input type="text" inputmode="numeric" class="q" value="'+esc(v.qty||"")+'" placeholder="1"></td>'+
-    sel("sz", PF_SIZES, v.size) + sel("ty", PF_CTYPE, v.ctype) +
-    tx("a", v.a, "", ' class="g"') + tx("b", v.b) +
-    tx("ks", v.ks, "", ' class="g"') +
-    '<td><select class="kl"><option value=""></option><option'+(v.kl==="L"?" selected":"")+'>L</option><option'+(v.kl==="R"?" selected":"")+'>R</option></select></td>'+
-    tx("kst", v.kst) + tx("kh", v.kh) +
-    tx("od", v.od, "", ' class="g"') + tx("m1", v.m1) + tx("m2", v.m2) +
-    tx("np", v.np, "", ' class="g"') + tx("nt", v.nt, "Anything the bender should know") +
-    '<td><button class="x" title="Remove">&times;</button></td>';
+  const cell = (cls, inner) => '<td class="'+cls+'">'+inner+"</td>";
+  const sel = (cls, list, val, td) => cell(td, '<select class="'+cls+'"><option value=""></option>'+
+      list.map(s=>'<option'+(s===val?" selected":"")+">"+esc(s)+"</option>").join("")+"</select>");
+  const tx = (cls, val, td, ph) => cell(td, '<input type="text" class="'+cls+'" value="'+esc(val||"")+'"'+(ph?' placeholder="'+ph+'"':"")+">");
+  tr.dataset.kind = v.kind || "90";
+  tr.innerHTML =
+    '<td class="c n b-id"><span class="bno"></span>'+
+      '<div class="kindsel">'+
+        [["90","90°"],["kick","Kick"],["off","Offset"],["nip","Nipple"]].map(([k,lab])=>
+          '<button type="button" data-kind="'+k+'"'+(tr.dataset.kind===k?' aria-pressed="true"':'')+">"+lab+"</button>").join("")+
+      "</div></td>"+
+    cell('b-qty" data-l="How many', '<input type="text" inputmode="numeric" class="q" value="'+esc(v.qty||"")+'" placeholder="1">')+
+    sel("sz", PF_SIZES, v.size, 'half" data-l="Size') + sel("ty", PF_CTYPE, v.ctype, 'half r" data-l="Type') +
+    tx("a", v.a, 'g g90 half" data-l="90° A') + tx("b", v.b, 'g90 half r" data-l="90° B') +
+    tx("ks", v.ks, 'g gkick half" data-l="Kick size') +
+    cell('gkick half r" data-l="Left or right', '<select class="kl"><option value=""></option><option'+
+      (v.kl==="L"?" selected":"")+'>L</option><option'+(v.kl==="R"?" selected":"")+">R</option></select>")+
+    tx("kst", v.kst, 'gkick half" data-l="Kick start') + tx("kh", v.kh, 'gkick half r" data-l="Kick H') +
+    tx("od", v.od, 'g goff half" data-l="Offset degrees') + tx("m1", v.m1, 'goff half r" data-l="1st mark') +
+    tx("m2", v.m2, 'goff half" data-l="2nd mark') +
+    tx("np", v.np, 'g gnip" data-l="Nipple length') +
+    tx("nt", v.nt, 'b-note" data-l="Notes', "Anything the bender should know") +
+    '<td class="b-x"><button class="x" title="Remove">&times;</button></td>';
   tr.querySelector(".x").onclick = ()=>{ tr.remove(); pfRenum(); };
+  tr.querySelector(".kindsel").onclick = e=>{
+    const btn = e.target.closest("button[data-kind]"); if(!btn) return;
+    tr.dataset.kind = btn.dataset.kind;
+    tr.querySelectorAll(".kindsel button").forEach(x=>x.setAttribute("aria-pressed", x===btn));
+  };
   tb.appendChild(tr); pfRenum();
 }
 function pfRenum(){
-  [...$("pfBends").tBodies[0].rows].forEach((r,i)=>{ r.cells[0].textContent = i+1; });
+  [...$("pfBends").tBodies[0].rows].forEach((r,i)=>{
+    const n = r.querySelector(".bno"); if(n) n.textContent = i+1;
+  });
 }
 $("pfAddItem").onclick = ()=>pfRowItem();
 $("pfAddBend").onclick = ()=>pfRowBend();
@@ -6709,7 +6779,7 @@ function pfCollect(){
   })).filter(i=>i.desc||i.qty);
   const bends = [...$("pfBends").tBodies[0].rows].map((r,i)=>{
     const g = c=>{ const el=r.querySelector("."+c); return el ? el.value.trim() : ""; };
-    const o = {n:i+1, qty:g("q"), size:g("sz"), ctype:g("ty"), a:g("a"), b:g("b"),
+    const o = {n:i+1, kind:r.dataset.kind||"90", qty:g("q"), size:g("sz"), ctype:g("ty"), a:g("a"), b:g("b"),
       ks:g("ks"), kl:g("kl"), kst:g("kst"), kh:g("kh"), od:g("od"), m1:g("m1"), m2:g("m2"), np:g("np"), nt:g("nt")};
     o.any = ["qty","size","ctype","a","b","ks","kl","kst","kh","od","m1","m2","np","nt"].some(k=>o[k]);
     return o;
@@ -6930,6 +7000,20 @@ function tpCounts(){
   });
   return out;
 }
+/* Showing "Ready 0" when the shop's list never reached this device is worse
+   than showing nothing, so say which of the three it is. */
+function stockTrust(){
+  if(!SB.on)
+    return ["warn","This device is not syncing with the shop.",
+      "The counts below are only what is on this phone, not what Isaac has in the shop. Ask the office to connect this device under Settings, Sync."];
+  if(SB.bad && SB.bad.has("tools"))
+    return ["bad","The shop's temp power list is not reaching this device.",
+      "The server refused the tools table, which usually means it was never created. In the office: Settings, Sync, Check the tables, then run the SQL it gives you."];
+  if(!(db.tools||[]).length)
+    return ["warn","The shop has not loaded its temp power inventory yet.",
+      "Nothing has been counted into the Temp power tab in the office. Put in what you need and the shop will sort it out."];
+  return null;
+}
 function renderTpStock(){
   const c = tpCounts();
   const keep = {};
@@ -6943,16 +7027,30 @@ function renderTpStock(){
       '<td class="n num s-n'+(b.repair?' rep':'')+'" data-l="Needs repair">'+n(b.repair)+'</td>'+
       '<td class="n num s-n" data-l="On jobs">'+n(b.job)+'</td>'+
       '<td class="n num s-n" data-l="Other shops">'+n(b.other)+'</td>'+
-      '<td class="qty"><input type="number" min="0" step="1" data-tp="'+k.k+'" placeholder="0" value="'+esc(keep[k.k]||"")+'"></td></tr>';
+      '<td class="qty" data-l="How many you need"><div class="stp">'+
+        '<button type="button" class="stepdn">&minus;</button>'+
+        '<input type="number" min="0" step="1" data-tp="'+k.k+'" placeholder="0" value="'+esc(keep[k.k]||"")+'">'+
+        '<button type="button" class="stepup">+</button></div></td></tr>';
   }).join("");
   const tot = TP_KINDS.reduce((a,k)=>{ ["ready","repair","job","other"].forEach(x=>a[x]+=c[k.k][x]); return a; }, {ready:0,repair:0,job:0,other:0});
+  const tr = stockTrust();
+  /* the whole panel is written once, then wired: rewriting it afterwards would
+     throw away the handlers */
   $("tpStock").innerHTML =
+    (tr ? '<div class="flag '+(tr[0]==="bad"?"":"warn")+'"><strong>'+esc(tr[1])+"</strong><br>"+esc(tr[2])+"</div>" : "")+
     '<div class="tscroll"><table class="ftab stock"><thead><tr>'+
     '<th>Stand</th><th class="n">Ready</th><th class="n">Needs repair</th><th class="n">On jobs</th><th class="n">Other shops</th><th class="n">How many<br>you need</th>'+
     '</tr></thead><tbody>'+rows+'</tbody><tfoot><tr><td>In the shop</td>'+
     '<td class="n num">'+tot.ready+'</td><td class="n num">'+tot.repair+'</td><td class="n num">'+tot.job+'</td><td class="n num">'+tot.other+'</td><td></td></tr></tfoot></table></div>';
-  if(!(db.tools||[]).length)
-    $("tpStock").innerHTML += '<div class="flag warn">The shop has not loaded its temp power inventory yet, so the counts above are all zero. Put in what you need and the shop will sort it out.</div>';
+  $("tpStock").querySelectorAll(".stp").forEach(g=>{
+    const inp = g.querySelector("input");
+    const bump = n => { inp.value = Math.max(0, (+inp.value||0) + n) || ""; };
+    g.querySelector(".stepdn").onclick = ()=>bump(-1);
+    g.querySelector(".stepup").onclick = ()=>bump(1);
+  });
+  $("tpAsOf").textContent = SB.on
+    ? (SB.last ? "Shop stock as of "+T.clock(SB.last) : "Shop stock")
+    : "Counts from this device only";
 }
 function tpCollect(){
   const want = [...$("tpStock").querySelectorAll("[data-tp]")].map(i=>({
