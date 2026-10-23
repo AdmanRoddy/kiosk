@@ -323,8 +323,8 @@ td .x{width:auto;min-height:0}
 }
 @media (max-width:640px){
   .docstrip{gap:10px;font-size:11px}
-  .seg{width:100%}
-  .seg button{flex:1;padding:0 8px;font-size:13px}
+  .segwrap .seg{width:100%}
+  .segwrap .seg button{flex:1;padding:0 8px;font-size:13px}
   .segwrap{gap:5px}
   #field main{padding-bottom:90px}
   #field textarea{min-height:88px}
@@ -389,6 +389,10 @@ input[type=date]{text-align:left;min-width:0}
   #tpStock .stp button{display:block;width:52px;border:1px solid var(--line);background:var(--field);
     font-size:22px;font-weight:600;color:var(--navy);line-height:1;padding:0}
   #tpStock .stp input{text-align:center;font-size:18px;font-weight:600;border-left:0;border-right:0;min-height:46px}
+
+  /* the 480V B-phase toggle drops under its row instead of running off the side */
+  #v-wire .crow{flex-wrap:wrap}
+  #v-wire .crow .seg{margin-left:auto;width:auto;max-width:100%}
 
   /* conduit bends: one card per bend, and only the boxes that bend needs */
   .swipe{display:none}
