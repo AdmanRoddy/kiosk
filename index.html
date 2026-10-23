@@ -310,6 +310,14 @@ td .x{width:auto;min-height:0}
 .err-field{outline:2px solid var(--red);outline-offset:-1px;background:#fdf2f4}
 
 /* toast */
+#signin{position:fixed;inset:0;z-index:95;background:rgba(19,49,79,.55);
+  display:flex;align-items:center;justify-content:center;padding:18px}
+#signin[hidden]{display:none}
+.si-card{background:var(--paper);border:1px solid var(--line);border-top:3px solid var(--red);
+  padding:18px;width:100%;max-width:380px}
+.si-card h3{margin:0 0 4px;font-size:17px}
+.si-card label.f{width:100%}
+.si-card label.f input{width:100%}
 #ftoast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);
   background:var(--ink);color:#fff;padding:11px 18px;font-size:14px;font-weight:600;
   opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;z-index:90;max-width:90vw;text-align:center}
@@ -1205,6 +1213,7 @@ input[type=date]{text-align:left;min-width:0}
     <div id="devices"></div>
     <p class="hint" style="margin-top:0">Leave these blank and everything stays in this browser. Fill them in and every machine you set up the same way shares one set of books, and nothing is lost if this computer dies.</p>
     <p class="hint">These tables live in their own <strong>schema</strong>, so you can point this at a Supabase project you already use for something else. Nothing outside this schema is read or written. Anyone holding that project's anon key can still reach these tables, so keep the key with the shop.</p>
+    <div id="authNote"></div>
     <div id="bakedNote"></div>
     <div class="row">
       <label class="f" style="flex:1 1 320px">Project URL<input type="text" id="sbUrl" placeholder="https://xxxxxxxx.supabase.co"></label>
@@ -1568,6 +1577,17 @@ input[type=date]{text-align:left;min-width:0}
 
   </main>
 </div>
+<div id="signin" hidden><div class="si-card">
+  <h3>Office sign-in</h3>
+  <p class="hint" style="margin-top:0">The shop account. Rates, crew, reports and the time clock live behind this.</p>
+  <label class="f">Email<input type="email" id="siEmail" autocomplete="username" placeholder="shop@admanelectric.com"></label>
+  <label class="f" style="margin-top:8px">Password<input type="password" id="siPass" autocomplete="current-password"></label>
+  <div id="siMsg"></div>
+  <div class="row" style="margin-top:12px">
+    <button class="b red" id="siGo">Sign in</button>
+    <button class="b ghost" id="siCancel">Cancel</button>
+  </div>
+</div></div>
 <div id="ftoast"></div>
 
 <script>/* Adman Wire Room, tab module */
@@ -4696,6 +4716,21 @@ function renderSettings(){
         '<div class="row" style="margin:8px 0"><label class="f">This device is called<input type="text" id="devName" value="'+esc(localStorage.getItem("adman_device_name")||"")+'" placeholder="'+esc(deviceName())+'" style="width:220px"></label></div>'
       : "";
     {
+      const an = $("authNote");
+      if(an) an.innerHTML = SB.local
+        ? ""
+        : SB.user
+          ? '<div class="flag good"><strong>Signed in as '+esc(SB.user.email||"the shop")+'.</strong> '+
+            'This machine can see and change everything. '+
+            '<button class="b ghost sm" id="sbOut" style="margin-left:6px">Sign out</button></div>'
+          : (SB.on
+              ? '<div class="flag warn"><strong>This device is not signed in.</strong> It can send orders and read stand counts, nothing else. '+
+                '<button class="b ghost sm" id="sbIn" style="margin-left:6px">Sign in</button></div>'
+              : "");
+      const so = $("sbOut"); if(so) so.onclick = ()=>{ if(confirm("Sign this machine out?")) sbSignOut(); };
+      const si = $("sbIn");  if(si) si.onclick = showSignIn;
+    }
+    {
       const c = sbCfg(), B = (typeof BAKED_SYNC==="object" && BAKED_SYNC) || {};
       if($("sbUrl") && !$("sbUrl").value){ $("sbUrl").value = c.url; $("sbKey").value = c.key; $("sbSchema").value = c.schema; }
       const bn = $("bakedNote");
@@ -5104,7 +5139,7 @@ $("xGoDaily").onclick = async ()=>{
    blob: the kiosk writes punches and requests, the office writes job forms and
    rates, and each row carries its own updated_at. Newest write for a given row
    wins; nothing else on the table is touched. */
-const SB = { client:null, on:false, busy:false, last:null, snap:{}, err:"", bad:new Set() };
+const SB = { client:null, on:false, busy:false, last:null, snap:{}, err:"", bad:new Set(), user:null, field:false };
 const SB_TABLES = ["employees","pms","jobs","savings","punches","timeoff","tools","tickets","orders"];
 const stampNow = () => new Date().toISOString();
 
@@ -5123,7 +5158,9 @@ function sbMsg(t, cls){ const el=$("sbMsg"); if(el) el.innerHTML = t?'<div class
 function sbTag(){
   const el=$("syncTag"); if(!el) return;
   el.textContent = SB.on
-    ? (SB.local ? "Shop server on this network" : "Connected to "+sbCfg().schema)+
+    ? (SB.local ? "Shop server on this network"
+       : SB.field ? "Field device: stand counts and sending orders"
+       : "Signed in as "+((SB.user&&SB.user.email)||"the shop"))+
       (SB.last?" · last sync "+T.clock(SB.last):"")+(SB.err?" · "+SB.err:"")
     : "Not connected. This browser only.";
 }
@@ -5232,27 +5269,35 @@ async function sbConnect(quiet){
         document.head.appendChild(sc);
       });
     }
-    /* try the configured schema, then the other usual one, so a wrong box in
-       the settings is not a dead end */
-    const tries = [...new Set([schema, "prefab", "public"])];
-    let error = null;
-    for(const sc of tries){
-      SB.client = window.supabase.createClient(url, key, { db:{ schema: sc } });
+    /* One schema, the one that is configured. The old version quietly tried
+       others and saved whichever answered, which is how a whole shop ended up
+       on a schema that was missing half its tables. */
+    SB.client = window.supabase.createClient(url, key, { db:{ schema } });
+    const sess = await SB.client.auth.getSession();
+    SB.user = (sess && sess.data && sess.data.session) ? sess.data.session.user : null;
+
+    if(SB.user){
+      /* signed in: the whole set of books */
+      SB.field = false;
       const r = await SB.client.from("employees").select("id").limit(1);
-      if(!r.error){
-        error = null;
-        if(sc !== schema){ localStorage.setItem("adman_sb_schema", sc); sbMsg("Tables found in '"+sc+"' switched to it.","warn"); }
-        break;
-      }
-      error = r.error;
+      if(r.error) throw new Error(r.error.message +
+        (/schema|does not exist|not find/i.test(r.error.message)
+          ? "  Check that '"+schema+"' is listed under Settings, API, Exposed schemas."
+          : ""));
+      SB.on = true; SB.err = ""; sbTag();
+      await sbPull();
+      if(!quiet) sbMsg("Connected and signed in as "+esc(SB.user.email||"the shop")+".","good");
+    } else {
+      /* not signed in: a field device. Stand counts in, orders out, nothing else. */
+      SB.field = true;
+      const r = await SB.client.from("stock_public").select("*").limit(1);
+      if(r.error) throw new Error("Could not read the stock counts: "+r.error.message+
+        "  The shop may not have run the lockdown SQL yet.");
+      SB.on = true; SB.err = ""; sbTag();
+      await fetchStock();
+      await flushPendingOrders();
+      if(!quiet) sbMsg("Connected as a field device: stand counts and sending orders.","good");
     }
-    if(error) throw new Error(error.message +
-      (/schema|does not exist|not find/i.test(error.message)
-        ? "  Check that '"+schema+"' is listed under Settings → API → Exposed schemas, and that schema.sql has been run."
-        : ""));
-    SB.on = true; SB.err=""; sbTag();
-    await sbPull();
-    if(!quiet) sbMsg("Connected.","good");
     return true;
   }catch(e){ SB.on=false; sbTag(); sbMsg("Could not connect: "+esc(e.message)); return false; }
 }
@@ -5285,7 +5330,7 @@ async function sbPushAuthoritative(){
 }
 
 async function sbPushAll(){
-  if(!SB.on) return;
+  if(!SB.on || SB.field) return;
   markChanges();
   const trouble = [];
   for(const k of SB_TABLES){
@@ -5323,8 +5368,52 @@ async function sbPushAll(){
   if(trouble.length) throw new Error(trouble.join(" · "));
 }
 
+/* ---------------- a field device ----------------
+   It never pulls the books. It reads the counts view and posts orders, which
+   is all the public key is allowed to do. */
+let FIELD_STOCK = null;
+async function fetchStock(){
+  if(!SB.on || !SB.client) return false;
+  try{
+    const {data,error} = await SB.client.from("stock_public").select("*");
+    if(error) throw error;
+    FIELD_STOCK = data || [];
+    SB.last = stampNow();
+    try{ localStorage.setItem("adman_stock_cache", JSON.stringify({at:SB.last, rows:FIELD_STOCK})); }catch(e){}
+    sbTag();
+    const sec = $("v-temp");
+    if(sec && !sec.hidden) renderTpStock();
+    fStock();
+    return true;
+  }catch(e){ SB.err = "stock: "+e.message; sbTag(); return false; }
+}
+function loadStockCache(){
+  try{
+    const c = JSON.parse(localStorage.getItem("adman_stock_cache")||"null");
+    if(c && Array.isArray(c.rows)){ FIELD_STOCK = c.rows; SB.last = SB.last || c.at; }
+  }catch(e){}
+}
+/* An order written while there is no signal waits here and goes up later. */
+async function sendOrder(o){
+  if(!SB.on || !SB.client || SB.local) return false;
+  const row = {id:o.id, data:o, updated_at:new Date().toISOString()};
+  const {error} = await SB.client.from("orders").insert([row]);
+  if(error){ console.warn("order did not send:", error.message); return false; }
+  return true;
+}
+async function flushPendingOrders(){
+  const waiting = (db.orders||[]).filter(o=>o.pending);
+  if(!waiting.length) return;
+  let sent = 0;
+  for(const o of waiting){
+    const copy = Object.assign({}, o); delete copy.pending;
+    if(await sendOrder(copy)){ delete o.pending; sent++; }
+  }
+  if(sent){ save(); if(typeof ftoast==="function") ftoast(sent+" order"+(sent===1?"":"s")+" went up to the shop."); }
+}
+
 async function sbPull(){
-  if(!SB.on || SB.busy) return;
+  if(!SB.on || SB.busy || SB.field) return;
   SB.busy = true;
   const trouble = [];
   SB.bad = SB.bad || new Set();
@@ -5402,6 +5491,10 @@ const editing = () => {
 };
 setInterval(()=>{
   if(!SB.on || document.hidden || editing() || SB.busy) return;
+  if(SB.field){                      // field device: counts only, and any waiting orders
+    if(Date.now() % 60000 < 8000){ fetchStock(); flushPendingOrders(); }
+    return;
+  }
   if(!SB.local && (Date.now() % 20000) > 7000) return;      // Supabase: every ~20s; shop server: every 7s
   if(DIRTY.days.size || DIRTY.tables.size){ sbQueue(); return; }
   sbPull().then(()=>{
@@ -5759,6 +5852,7 @@ function wireK(){
   });
 }
 $("kOffice").onclick = ()=>{
+  if(officeNeedsSignIn()) return showSignIn();
   const pin = prompt("Office passcode");
   if(pin === null) return;
   if(pin !== String(db.settings.adminPin||"5104")) return alert("Wrong passcode.");
@@ -6427,12 +6521,48 @@ function showField(v){
 document.querySelectorAll("#field nav button").forEach(b=>{
   b.onclick = ()=>{ if(b.dataset.fv==="clock") setMode("kiosk"); else showField(b.dataset.fv); };
 });
+/* Two different doors. On a machine that keeps its own books, or the shop
+   server, the passcode is the only thing between you and the office. On a
+   device holding the public key, the office needs the shop sign-in, because
+   that key genuinely cannot read any of it. */
+function officeNeedsSignIn(){ return SB.on && !SB.local && !SB.user; }
+function openOffice(){ setMode("office"); renderDaily(); refreshBadge(); renderSettings(); }
 $("fOffice").onclick = ()=>{
+  if(officeNeedsSignIn()) return showSignIn();
   const pin = prompt("Office passcode");
   if(pin === null) return;
   if(pin !== String(db.settings.adminPin||"5104")) return alert("Wrong passcode.");
-  setMode("office"); renderDaily(); refreshBadge();
+  openOffice();
 };
+function showSignIn(){
+  $("signin").hidden = false;
+  $("siMsg").innerHTML = "";
+  $("siEmail").value = localStorage.getItem("adman_last_email")||"";
+  setTimeout(()=>($("siEmail").value ? $("siPass") : $("siEmail")).focus(), 60);
+}
+$("siCancel").onclick = ()=>{ $("signin").hidden = true; };
+$("siGo").onclick = async ()=>{
+  const email = $("siEmail").value.trim(), pass = $("siPass").value;
+  if(!email || !pass){ $("siMsg").innerHTML = '<div class="flag">Both boxes, please.</div>'; return; }
+  $("siMsg").innerHTML = '<div class="flag warn">Signing in…</div>';
+  try{
+    const {data,error} = await SB.client.auth.signInWithPassword({email, password:pass});
+    if(error) throw error;
+    localStorage.setItem("adman_last_email", email);
+    SB.user = data.user; SB.field = false;
+    $("siMsg").innerHTML = '<div class="flag good">Signed in. Pulling the books…</div>';
+    await sbConnect(true);
+    $("signin").hidden = true; $("siPass").value = "";
+    openOffice();
+  }catch(e){
+    $("siMsg").innerHTML = '<div class="flag">'+esc(e.message||"That did not work.")+"</div>";
+  }
+};
+async function sbSignOut(){
+  try{ await SB.client.auth.signOut(); }catch(e){}
+  SB.user = null; SB.field = true;
+  location.reload();
+}
 
 let ftT;
 function ftoast(msg, bad){
@@ -6440,7 +6570,10 @@ function ftoast(msg, bad){
   clearTimeout(ftT); ftT = setTimeout(()=>t.className = "", 4000);
 }
 function fStock(){
-  const n = (db.tools||[]).filter(t=>toolStatus(t)==="ready").length;
+  const n = SB.field
+    ? (FIELD_STOCK||[]).filter(r=>r.loc!=="job" && r.loc!=="other" && !r.needs_repair)
+        .reduce((a,r)=>a+(+r.n||0), 0)
+    : (db.tools||[]).filter(t=>toolStatus(t)==="ready").length;
   $("fStock").textContent = n ? n+" temp "+(n===1?"stand":"stands")+" ready in the shop" : "";
 }
 function fillPoLists(){
@@ -6477,6 +6610,17 @@ function saveOrder(o){
   o.at = o.at || new Date().toISOString();
   o.status = o.status || "new";
   db.orders.push(o);
+  if(SB.field){
+    /* nothing syncs on a field device, so the order is posted on its own and
+       held here until it goes */
+    o.pending = true; save();
+    sendOrder(Object.assign({}, o, {pending:undefined})).then(ok=>{
+      if(ok){ delete o.pending; save(); }
+      else if(typeof ftoast==="function")
+        ftoast("Saved on this phone. It will go up when you have a signal.", true);
+    });
+    return;
+  }
   save();
 }
 function mailOrder(o){
@@ -7075,6 +7219,16 @@ function tpCounts(){
   const out = {};
   TP_KINDS.forEach(k=>out[k.k] = {ready:0, repair:0, job:0, other:0});
   out.other = {ready:0, repair:0, job:0, other:0};
+  if(SB.field){
+    /* a field device only ever sees these counts, never the stands themselves */
+    (FIELD_STOCK||[]).forEach(r=>{
+      const b = out[tpKindOf(r.type)] || out.other;
+      const where = r.loc === "job" ? "job" : r.loc === "other" ? "other"
+                  : (r.needs_repair ? "repair" : "ready");
+      b[where] += (+r.n || 0);
+    });
+    return out;
+  }
   (db.tools||[]).forEach(t=>{
     const b = out[tpKindOf(t.type)] || out.other;
     b[toolStatus(t)]++;
@@ -7084,6 +7238,13 @@ function tpCounts(){
 /* Showing "Ready 0" when the shop's list never reached this device is worse
    than showing nothing, so say which of the three it is. */
 function stockTrust(){
+  if(SB.field){
+    if(!FIELD_STOCK) return ["warn","The shop's counts have not come through yet.",
+      "Pull down to refresh, or check this device has a signal."];
+    if(!FIELD_STOCK.length) return ["warn","The shop has nothing counted in yet.",
+      "Put in what you need anyway and the shop will sort it out."];
+    return null;
+  }
   if(!SB.on)
     return ["warn","This device is not syncing with the shop.",
       "The counts below are only what is on this phone, not what Isaac has in the shop. Ask the office to connect this device under Settings, Sync."];
@@ -7132,6 +7293,7 @@ function renderTpStock(){
   $("tpAsOf").textContent = SB.on
     ? (SB.last ? "Shop stock as of "+T.clock(SB.last) : "Shop stock")
     : "Counts from this device only";
+  if(SB.field && FIELD_STOCK) $("tpAsOf").textContent += " · live from the shop";
 }
 function tpCollect(){
   const want = [...$("tpStock").querySelectorAll("[data-tp]")].map(i=>({
@@ -7325,6 +7487,7 @@ function fieldBoot(){
 /* ---------------------------------------------------------------- go */
 $("kBack").onclick = ()=> setMode("field");
 $("wrSend").onclick = wrGo;
+loadStockCache();
 fieldBoot();
 ordBadge();
 {
