@@ -361,6 +361,29 @@ input[type=date]{text-align:left;min-width:0}
   #pfItems td.i-x::before{display:none}
 }
 
+/* Any table marked .stack turns into one card per row on a phone, with each
+   cell labelled by its data-l. Used by the office tables, which are otherwise
+   far too wide for the screen Josh actually reads them on. */
+@media (max-width:760px){
+  table.stack,table.stack tbody,table.stack tr,table.stack td{display:block;width:auto}
+  table.stack thead{display:none}
+  table.stack tbody tr{position:relative;border:1px solid var(--line);background:#fff;
+    padding:9px 10px 3px;margin-bottom:9px}
+  table.stack tbody tr:nth-child(even) td{background:transparent}
+  table.stack td{border:0;padding:0 0 8px;text-align:left}
+  table.stack td[data-l]::before{content:attr(data-l);display:block;font-size:12px;
+    color:var(--ink-2);font-weight:600;margin-bottom:3px}
+  table.stack td.half{display:inline-block;width:48.5%;vertical-align:top}
+  table.stack td.half.r{margin-left:3%}
+  table.stack td input,table.stack td select{width:100% !important;min-height:42px}
+  table.stack td.rm{position:absolute;top:4px;right:4px;padding:0;width:28px}
+  table.stack td.o-no{font-size:16px;padding-right:30px}
+  table.stack td.reads{color:var(--ink-2)}
+  table.stack td.o-act{display:flex;gap:7px;padding-top:2px}
+  table.stack tr.odet{padding:0;border:0;background:transparent}
+  table.stack tr.odet td{padding:0}
+}
+
 /* a quantity stepper: thumbs beat a number keyboard on a phone */
 .stp{display:flex;align-items:stretch}
 .stp button{display:none}
@@ -1084,7 +1107,7 @@ input[type=date]{text-align:left;min-width:0}
       <label class="f">Find<input type="text" id="ordFind" placeholder="work no, job, name" style="width:170px"></label>
     </div>
     <div id="ordList" style="margin-top:11px"></div>
-    <p class="hint">Submitted from the order forms on the field site. Photos and sketches ride along on the PDF the foreman emails. They are not kept here.</p>
+    <p class="hint"><strong>PDF</strong> rebuilds the order's sheet any time you need it, sketch included. Photos are not kept here, only on the copy the foreman emailed.</p>
   </div></div>
 </section>
 
@@ -2770,7 +2793,15 @@ function initWire(){
   });
 
   /* the host's order engine reads the sheet through this */
-  window.wireAPI = { getState:()=>state, totals:computeTotals, buildPDF, fileBase, COLORS };
+  window.wireAPI = {
+    getState:()=>state, totals:computeTotals, buildPDF, fileBase, COLORS,
+    /* rebuild an old order's sheet: swap the saved job in, draw, put it back */
+    buildPDFFrom(saved){
+      const keep = state;
+      try{ state = saved; return buildPDF(); }
+      finally{ state = keep; }
+    }
+  };
 
   /* ---------------- boot ---------------- */
   function boot(){ renderLogo(); load(); renderAll(); }
@@ -4597,13 +4628,13 @@ const SETFIELDS = [
 function renderSavings(){
   $("savTable").innerHTML = !(db.savings||[]).length
     ? '<div class="empty">No rates yet.</div>'
-    : '<table><thead><tr><th>What was prefabbed</th><th>Unit</th><th class="n">Field hours</th><th class="n">Per</th><th>Reads as</th><th></th></tr></thead><tbody>'+
-      db.savings.map(x=>'<tr><td><input type="text" data-v="'+x.id+'" data-p="name" value="'+esc(x.name)+'"></td>'+
-        '<td><input type="text" data-v="'+x.id+'" data-p="unit" value="'+esc(x.unit)+'" style="width:80px"></td>'+
-        '<td class="n"><input class="h num" type="number" step="0.001" style="width:88px" data-v="'+x.id+'" data-p="hours" value="'+x.hours+'"></td>'+
-        '<td class="n"><input class="h num" type="number" step="1" data-v="'+x.id+'" data-p="per" value="'+x.per+'"></td>'+
-        '<td class="mini">'+hrs3(x.hours)+" hr per "+(x.per>1?(+x.per).toLocaleString()+" ":"")+esc(x.unit)+"</td>"+
-        '<td><button class="x" data-vdel="'+x.id+'">&times;</button></td></tr>').join("")+"</tbody></table>";
+    : '<table class="stack"><thead><tr><th>What was prefabbed</th><th>Unit</th><th class="n">Field hours</th><th class="n">Per</th><th>Reads as</th><th></th></tr></thead><tbody>'+
+      db.savings.map(x=>'<tr><td data-l="What was prefabbed"><input type="text" data-v="'+x.id+'" data-p="name" value="'+esc(x.name)+'"></td>'+
+        '<td class="half" data-l="Unit"><input type="text" data-v="'+x.id+'" data-p="unit" value="'+esc(x.unit)+'" style="width:80px"></td>'+
+        '<td class="n half r" data-l="Field hours"><input class="h num" type="number" step="0.001" style="width:88px" data-v="'+x.id+'" data-p="hours" value="'+x.hours+'"></td>'+
+        '<td class="n half" data-l="Per"><input class="h num" type="number" step="1" data-v="'+x.id+'" data-p="per" value="'+x.per+'"></td>'+
+        '<td class="mini reads" data-l="Reads as">'+hrs3(x.hours)+" hr per "+(x.per>1?(+x.per).toLocaleString()+" ":"")+esc(x.unit)+"</td>"+
+        '<td class="rm"><button class="x" data-vdel="'+x.id+'">&times;</button></td></tr>').join("")+"</tbody></table>";
   $("savTable").querySelectorAll("[data-v]").forEach(el=>{
     const it = savItem(el.dataset.v), p = el.dataset.p;
     el.onchange = e => { it[p] = (p==="hours"||p==="per") ? +e.target.value||0 : e.target.value; save(); renderSavings(); };
@@ -4811,13 +4842,14 @@ function renderSnaps(){
   const s = snapshots();
   el.innerHTML = !s.length ? "" :
     '<p class="hint" style="margin:0 0 6px"><strong>Snapshots of this machine.</strong> One is taken before anything destructive, and at most every half hour otherwise. Restoring replaces everything currently here.</p>'+
-    '<table><thead><tr><th>Taken</th><th>Why</th><th class="n">Days</th><th class="n">Forms</th><th class="n">Punches</th><th></th></tr></thead><tbody>'+
-    s.slice(0,10).map(x=>"<tr><td>"+new Date(x.t).toLocaleString()+"</td><td>"+esc(x.label||"routine")+
-      '</td><td class="n num">'+x.days+'</td><td class="n num">'+x.forms+'</td><td class="n num">'+x.punches+
-      '</td><td><button class="b ghost sm" data-snap="'+x.k+'">Restore</button></td></tr>').join("")+
+    '<table class="stack"><thead><tr><th>Taken</th><th>Why</th><th class="n">Days</th><th class="n">Forms</th><th class="n">Punches</th><th></th></tr></thead><tbody>'+
+    s.slice(0,10).map(x=>'<tr><td data-l="Taken">'+new Date(x.t).toLocaleString()+'</td><td data-l="Why">'+esc(x.label||"routine")+
+      '</td><td class="n num half" data-l="Days">'+x.days+'</td><td class="n num half r" data-l="Forms">'+x.forms+
+      '</td><td class="n num half" data-l="Punches">'+x.punches+
+      '</td><td class="o-act"><button class="b ghost sm" data-snap="'+x.k+'">Restore</button></td></tr>').join("")+
     "</tbody></table>";
   el.querySelectorAll("[data-snap]").forEach(b=>b.onclick=async ()=>{
-    const when = b.closest("tr").firstElementChild.textContent;
+    const when = b.closest("tr").firstElementChild.textContent.replace(/^Taken/,"").trim();
     if(!confirm("Replace everything on this machine with the snapshot from "+when+"?")) return;
     let d;
     try{ d = JSON.parse(localStorage.getItem(b.dataset.snap)); }
@@ -6284,8 +6316,8 @@ function renderOrders(){
   ordBadge();
   $("ordList").innerHTML = !list.length
     ? '<div class="empty">'+(all.length?"Nothing matches those filters.":"No orders have come in from the field yet.")+'</div>'
-    : '<table><thead><tr><th style="width:92px">Work no.</th><th style="width:92px">Came in</th><th style="width:108px">Form</th>'+
-      '<th>Job</th><th style="width:130px">From</th><th style="width:88px">Priority</th><th style="width:128px">Status</th><th style="width:80px"></th></tr></thead><tbody>'+
+    : '<table class="stack"><thead><tr><th style="width:92px">Work no.</th><th style="width:92px">Came in</th><th style="width:108px">Form</th>'+
+      '<th>Job</th><th style="width:130px">From</th><th style="width:88px">Priority</th><th style="width:128px">Status</th><th style="width:110px"></th></tr></thead><tbody>'+
       list.map(o=>{
         const pr = o.priority==="Emergency" ? ' style="color:var(--red);font-weight:700"'
                  : o.priority==="Rush" ? ' style="color:var(--warn);font-weight:700"' : '';
@@ -6297,15 +6329,16 @@ function renderOrders(){
             '<span class="spacer"></span>'+
             '<button class="b ghost sm" data-odel="'+o.id+'">Delete this order</button></div></td></tr>'
           : "";
-        return '<tr><td><strong>'+esc(o.no||"")+'</strong></td>'+
-          '<td class="num">'+(o.at?D.us(o.at.slice(0,10)):"")+'</td>'+
-          '<td>'+esc(ORD_NAME[o.kind]||o.kind||"")+'</td>'+
-          '<td>'+esc(o.job||"")+(o.po?' <span class="mini">'+esc(o.po)+'</span>':"")+'</td>'+
-          '<td>'+esc(o.by||"")+'</td>'+
-          '<td'+pr+'>'+esc(o.priority||"Standard")+'</td>'+
-          '<td><select data-ost="'+o.id+'">'+Object.keys(ORD_STAT).map(k=>
+        return '<tr><td class="o-no"><strong>'+esc(o.no||"")+'</strong></td>'+
+          '<td class="num half" data-l="Came in">'+(o.at?D.us(o.at.slice(0,10)):"")+'</td>'+
+          '<td class="half r" data-l="Form">'+esc(ORD_NAME[o.kind]||o.kind||"")+'</td>'+
+          '<td data-l="Job">'+esc(o.job||"")+(o.po?' <span class="mini">'+esc(o.po)+'</span>':"")+'</td>'+
+          '<td class="half" data-l="From">'+esc(o.by||"")+'</td>'+
+          '<td class="half r" data-l="Priority"'+pr+'>'+esc(o.priority||"Standard")+'</td>'+
+          '<td data-l="Status"><select data-ost="'+o.id+'">'+Object.keys(ORD_STAT).map(k=>
             '<option value="'+k+'"'+(k===(o.status||"new")?" selected":"")+">"+ORD_STAT[k]+"</option>").join("")+"</select></td>"+
-          '<td><button class="b ghost sm" data-oshow="'+o.id+'">'+(ordShown===o.id?"Hide":"Open")+'</button></td></tr>'+det;
+          '<td class="o-act"><button class="b ghost sm" data-oshow="'+o.id+'">'+(ordShown===o.id?"Hide":"Open")+'</button> '+
+          '<button class="b ghost sm" data-opdf="'+o.id+'">PDF</button></td></tr>'+det;
       }).join("")+"</tbody></table>";
   $("ordList").querySelectorAll("[data-oshow]").forEach(el=>el.onclick=()=>{
     ordShown = ordShown===el.dataset.oshow ? null : el.dataset.oshow; renderOrders();
@@ -6318,6 +6351,30 @@ function renderOrders(){
     if(!confirm("Delete this order for good?")) return;
     snapshot(true, "before deleting an order");
     removeRec("orders", el.dataset.odel); ordShown = null; save(); renderOrders();
+  });
+  $("ordList").querySelectorAll("[data-opdf]").forEach(el=>el.onclick=()=>{
+    const o = db.orders.find(x=>x.id===el.dataset.opdf); if(!o) return;
+    if(!pdfReady()) return alert("The PDF builder did not load. Reload the page and try again.");
+    const was = el.textContent; el.textContent = "…"; el.disabled = true;
+    try{
+      let doc;
+      if(o.kind === "prefab")
+        doc = pfBuildPDF(o, o.no, {sketch:o.sketchImg||null, photos:[]});
+      else if(o.kind === "temp")
+        doc = tpBuildPDF(o, o.no, o.stock);
+      else if(o.kind === "wire"){
+        if(!o.wire) throw new Error("this order was sent in before the wire sheet was being kept");
+        if(typeof initWire === "function") initWire();
+        if(!window.wireAPI) throw new Error("open the Wire room tab once, then try again");
+        doc = window.wireAPI.buildPDFFrom(o.wire);
+      }
+      else throw new Error("no builder for this kind of order");
+      pdfSave(doc, o.no+(o.job?" - "+o.job:"")+".pdf");
+    }catch(err){
+      console.error(err);
+      alert("Could not build that PDF: "+err.message);
+    }
+    el.textContent = was; el.disabled = false;
   });
   $("ordList").querySelectorAll("[data-ocopy]").forEach(el=>el.onclick=()=>{
     const o = db.orders.find(x=>x.id===el.dataset.ocopy); if(!o) return;
@@ -6767,6 +6824,15 @@ function pfErase(p){
 ["mousedown","touchstart"].forEach(ev=>pad.addEventListener(ev, pfDown, {passive:false}));
 ["mousemove","touchmove"].forEach(ev=>pad.addEventListener(ev, pfMove, {passive:false}));
 ["mouseup","mouseleave","touchend","touchcancel"].forEach(ev=>pad.addEventListener(ev, pfUp));
+/* a lighter copy of the sketch, small enough to live in the order record */
+function pfPadSmall(){
+  const w = 620, hgt = Math.round(w*PAD_H/PAD_W);
+  const c = document.createElement("canvas"); c.width=w; c.height=hgt;
+  const g = c.getContext("2d");
+  g.fillStyle = "#eef3f7"; g.fillRect(0,0,w,hgt);
+  g.drawImage(pad, 0, 0, w, hgt);
+  return c.toDataURL("image/jpeg", 0.6);
+}
 function pfPadImage(){
   const c = document.createElement("canvas"); c.width=PAD_W; c.height=PAD_H;
   const g = c.getContext("2d");
@@ -6855,7 +6921,9 @@ function pfSummary(d, no){
   L.push("Photos: "+d.photos+"    Sketch: "+(d.sketch?"yes":"no")+(d.photos||d.sketch?"  (attached to the PDF)":""));
   return L.join("\n");
 }
-function pfBuildPDF(d, no){
+function pfBuildPDF(d, no, imgs){
+  const SKETCH = imgs ? imgs.sketch : (d.sketch ? pfPadImage() : null);
+  const PHOTOS = imgs ? (imgs.photos||[]) : pfPhotos;
   const doc = pdfDoc("Prefab order", {no});
   const PW = doc.internal.pageSize.getWidth(), M = 40;
   let y = 92;
@@ -6918,19 +6986,25 @@ function pfBuildPDF(d, no){
     const nl = doc.splitTextToSize(d.notes, PW-2*M);
     doc.text(nl, M, y); y += nl.length*12 + 14;
   }
-  if(d.sketch){
+  if(SKETCH){
     if(y > PH-250){ doc.addPage(); y = 60; }
     doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(110,118,126);
     doc.text("MARKUP / SKETCH", M, y); y += 8;
     const iw = PW-2*M, ih = iw*(PAD_H/PAD_W);
-    doc.addImage(pfPadImage(), "JPEG", M, y, iw, ih);
+    doc.addImage(SKETCH, "JPEG", M, y, iw, ih);
     doc.setDrawColor(207,212,215); doc.rect(M, y, iw, ih);
+    y += ih + 14;
   }
-  pfPhotos.forEach((p,i)=>{
+  if(!PHOTOS.length && d.photos){
+    if(y > PH-80){ doc.addPage(); y = 60; }
+    doc.setFont("helvetica","normal"); doc.setFontSize(8.5); doc.setTextColor(110,118,126);
+    doc.text(d.photos+" photo"+(d.photos===1?" was":"s were")+" sent with the original email.", M, y);
+  }
+  PHOTOS.forEach((p,i)=>{
     doc.addPage();
     doc.setFillColor(19,49,79); doc.rect(0,0,PW,28,"F");
     doc.setTextColor(255,255,255); doc.setFont("helvetica","bold"); doc.setFontSize(9);
-    doc.text(no+"   PHOTO "+(i+1)+" OF "+pfPhotos.length, M, 18);
+    doc.text(no+"   PHOTO "+(i+1)+" OF "+PHOTOS.length, M, 18);
     try{
       const pr2 = doc.getImageProperties(p), top = 46, maxW = PW-2*M, maxH = PH-top-50;
       let w = maxW, h = w*(pr2.height/pr2.width);
@@ -6955,7 +7029,10 @@ function pfGo(pdfOnly){
   $("pfNo").textContent = no;
   const o = {no, kind:"prefab", kindName:"Prefab order", by:d.by, email:d.email, phone:d.phone,
     job:d.job, jobNo:d.jobNo, po:d.po, due:d.due, deliver:d.deliver, priority:d.priority,
+    laborCC:d.laborCC, matCC:d.matCC,
     notes:d.notes, items:d.items, bends:d.bends, photos:d.photos, sketch:d.sketch};
+  /* the sketch is small enough to keep; photos are not, and ride on the email */
+  if(d.sketch){ try{ o.sketchImg = pfPadSmall(); }catch(e){} }
   o.summary = pfSummary(d, no);
   o.pdfName = fname;
   saveOrder(o);
@@ -7099,8 +7176,8 @@ function tpSummary(d, no){
   L.push("Ready / Repair are what the shop showed at "+stampNow2()+".");
   return L.join("\n");
 }
-function tpBuildPDF(d, no){
-  const c = tpCounts();
+function tpBuildPDF(d, no, snap){
+  const c = snap || tpCounts();
   const doc = pdfDoc("Temp panel request", {no});
   const PW = doc.internal.pageSize.getWidth(), M = 40;
   let y = 92;
@@ -7125,7 +7202,7 @@ function tpBuildPDF(d, no){
   });
   y = doc.lastAutoTable.finalY + 12;
   doc.setFont("helvetica","normal"); doc.setFontSize(7.5); doc.setTextColor(110,118,126);
-  doc.text("Shop stock as shown to the field at "+stampNow2()+".", M, y); y += 18;
+  doc.text("Shop stock as shown to the field when the request went in"+(d.at?", "+d.at:"")+".", M, y); y += 18;
   if(d.notes){
     doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(110,118,126);
     doc.text("NOTES", M, y); y += 13;
@@ -7149,7 +7226,8 @@ function tpGo(pdfOnly){
   if(pdfOnly){ pdfSave(doc, fname); ftoast("PDF downloaded."); return; }
   $("tpNo").textContent = no;
   const o = {no, kind:"temp", kindName:"Temp panel request", by:d.by, email:d.email, phone:d.phone,
-    job:d.job, po:d.po, due:d.due, deliver:d.deliver, priority:d.priority, notes:d.notes, want:d.want};
+    job:d.job, po:d.po, due:d.due, deliver:d.deliver, priority:d.priority, notes:d.notes, want:d.want,
+    stock:tpCounts(), at:stampNow2()};
   o.summary = tpSummary(d, no);
   o.pdfName = fname;
   saveOrder(o);
@@ -7220,6 +7298,7 @@ function wrGo(){
     job:S.job.name||"", jobNo:S.job.number||"", po:S.job.po||"",
     due:S.job.needBy||"", priority:"Standard",
     feet:t.grand, pounds:Math.round(t.grandLb), pulls:(S.pulls||[]).length};
+  try{ o.wire = JSON.parse(JSON.stringify(S)); }catch(e){}   // enough to rebuild the sheet later
   o.summary = wrSummary(no);
   o.pdfName = fname;
   saveOrder(o);
