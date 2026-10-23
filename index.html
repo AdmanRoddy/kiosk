@@ -378,6 +378,10 @@ input[type=date]{text-align:left;min-width:0}
   table.stack tbody tr{position:relative;border:1px solid var(--line);background:#fff;
     padding:9px 10px 3px;margin-bottom:9px}
   table.stack tbody tr:nth-child(even) td{background:transparent}
+  table.stack tfoot{display:block}
+  table.stack tfoot tr{position:relative;border:1px solid var(--line);background:#eef2f5;
+    padding:9px 10px 3px;margin-bottom:9px}
+  table.stack tfoot td{background:transparent}
   table.stack td{border:0;padding:0 0 8px;text-align:left}
   table.stack td[data-l]::before{content:attr(data-l);display:block;font-size:12px;
     color:var(--ink-2);font-weight:600;margin-bottom:3px}
@@ -3337,6 +3341,20 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return xml.slice(0, m.index) + body + xml.slice(m.index + m[0].length);
   }
 
+  /* empty a cell out but leave its borders and shading alone */
+  function clearCell(xml, ref) {
+    const re = new RegExp('<c r="' + ref + '"([^>]*?)(?:\\/>|>[\\s\\S]*?<\\/c>)');
+    const m = xml.match(re);
+    if (!m) return xml;
+    const attrs = m[1].replace(/ t="[^"]*"/, "");
+    return xml.slice(0, m.index) + '<c r="' + ref + '"' + attrs + "/>" + xml.slice(m.index + m[0].length);
+  }
+  /* what style a cell is carrying, so a neighbour can borrow it */
+  function styleOf(xml, ref) {
+    const m = xml.match(new RegExp('<c r="' + ref + '"[^>]*? s="(\\d+)"'));
+    return m ? +m[1] : undefined;
+  }
+
   /* Grow a block by cloning a template row in place. Rows below the insert point
      move down; formulas referencing the insert row or anything below it move
      with them (so SUM(U7:U21) becomes SUM(U7:U21+extra)). Returns the block's
@@ -3494,7 +3512,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     day.forms.forEach((f) => {
       const desc = wrap(f.desc, 110, DESC_ROWS.length);
       const em = Math.max(0, f.materials.length - MAT_ROWS);
-      const ee = Math.max(0, f.crew.length - EMP_ROWS);
+      const ee = Math.max(0, f.crew.length + 1 - EMP_ROWS);   // +1 keeps a line free for the total
       const ex = expand(tpl.rows, [
         { after: M_LAST, count: em, cloneOf: M_LAST },
         { after: E_LAST, count: ee, cloneOf: E_LAST },
@@ -3523,18 +3541,42 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         const br = empRows[i]; if (!br) return;
         setRow(br, (r) => {
           r = put(r, "A" + br, c.employee);
+          r = put(r, "C" + br, c.cls);
           r = put(r, "D" + br, c.rt, true);
           r = put(r, "E" + br, c.ot, true);
           return put(r, "F" + br, c.dt, true);
         });
       });
+      /* CLASS over the column the men's classifications go in */
+      const hdr = ex.map[46];
+      setRow(hdr, (r) => {
+        const hs = styleOf(r, "B" + hdr);              // the header style the form already uses
+        r = clearCell(r, "B" + hdr);
+        r = put(r, "A" + hdr, "EMPLOYEE NAME", false, hs);
+        return put(r, "C" + hdr, "CLASS");
+      });
+      /* and the day's hours added up, on the line under the last man */
+      const tot = f.crew.reduce((a, c) => {
+        a.rt += +c.rt || 0; a.ot += +c.ot || 0; a.dt += +c.dt || 0; return a;
+      }, { rt: 0, ot: 0, dt: 0 });
+      const totRow = f.crew.length ? empRows[f.crew.length] : null;
+      if (totRow) setRow(totRow, (r) => {
+        r = put(r, "A" + totRow, "TOTAL HOURS   " + r2(tot.rt + tot.ot + tot.dt).toFixed(2));
+        r = put(r, "D" + totRow, tot.rt, true);
+        r = put(r, "E" + totRow, tot.ot, true);
+        return put(r, "F" + totRow, tot.dt, true);
+      });
       MONEY_ROWS.forEach((t, mi) => setRow(ex.map[t], (r) =>
         put(r, "H" + ex.map[t], f.money[mi], true, mi === 4 ? MS().total : MS().money)));
 
       // merges: the template's, remapped, plus one for every cloned line
-      const mg = (merges || []).map((z) => [z[0], ex.map[z[1]] || z[1], z[2], ex.map[z[3]] || z[3]]);
+      const nameRows = new Set(f.crew.map((c, i) => empRows[i]).filter(Boolean));
+      const narrow = (z) => (z[0] === "A" && z[2] === "C" && z[1] === z[3] && nameRows.has(z[1]))
+        ? ["A", z[1], "B", z[3]] : z;
+      const mg = (merges || []).map((z) => narrow([z[0], ex.map[z[1]] || z[1], z[2], ex.map[z[3]] || z[3]]));
       (ex.added[M_LAST] || []).forEach((r) => mg.push(["B", r, "F", r]));
-      (ex.added[E_LAST] || []).forEach((r) => mg.push(["A", r, "C", r]));
+      (ex.added[E_LAST] || []).forEach((r) => mg.push(narrow(["A", r, "C", r])));
+      mg.push(["A", hdr, "B", hdr]);
       outBlocks.push({ rows, height: ex.total, merges: mg });
     });
     dailySheet.lastOffsets = offsetsOf(outBlocks);
@@ -4206,6 +4248,23 @@ function totalStrip(t){
          '<div class="save"><b>NET SAVED</b><span class="num">'+money(t.net)+'</span></div>';
 }
 
+/* the crew line at the bottom of a job form: how many men, and their hours added up */
+function crewFootRow(f){
+  const s = db.settings;
+  const t = f.crew.reduce((a,c)=>{
+    const e = emp(c.empId), r = e ? +e.rate||0 : 0;
+    a.rt += +c.rt||0; a.ot += +c.ot||0; a.dt += +c.dt||0;
+    a.cost += (+c.rt||0)*r + (+c.ot||0)*r*s.otMult + (+c.dt||0)*r*s.dtMult;
+    if(c.empId) a.men++;
+    return a;
+  }, {men:0, rt:0, ot:0, dt:0, cost:0});
+  return '<tr><td data-l="">Total</td>'+
+    '<td class="mini" data-l="Men">'+(t.men===1 ? "1 man" : t.men+" men")+"</td>"+
+    [["Reg",t.rt],["O.T.",t.ot],["D.T.",t.dt],["Hours",t.rt+t.ot+t.dt]]
+      .map(([l,v])=>'<td class="n num half" data-l="'+l+'">'+hrs(v)+"</td>").join("")+
+    '<td class="n num" data-l="Cost">'+money(t.cost)+"</td><td></td></tr>";
+}
+
 function formHTML(f,i){
   const t = formTotals(f);
   const j = job(f.jobId); const p = pmOf(f.jobId);
@@ -4217,19 +4276,24 @@ function formHTML(f,i){
   const clockRows = f.crew.filter(c=>c.fromClock).map(c=>{
     const e = emp(c.empId); const r = e?+e.rate||0:0; const s=db.settings;
     const lineCost = (+c.rt||0)*r+(+c.ot||0)*r*s.otMult+(+c.dt||0)*r*s.dtMult;
-    return '<tr style="background:#f3f7f4"><td>'+esc(e?e.name:"(unknown)")+' <span class="chip appr" style="margin-left:6px">clock</span></td>'+
-      ['rt','ot','dt'].map(h=>'<td class="n num">'+(c[h]?hrs(c[h]):"")+"</td>").join("")+
-      '<td class="n num">'+hrs((+c.rt||0)+(+c.ot||0)+(+c.dt||0))+'</td><td class="n num">'+money(lineCost)+
-      '</td><td><span class="mini" title="Change this on the Time clock tab">⏱</span></td></tr>';
+    return '<tr style="background:#f3f7f4"><td data-l="Employee">'+esc(e?e.name:"(unknown)")+' <span class="chip appr" style="margin-left:6px">clock</span></td>'+
+      '<td class="mini" data-l="Class">'+esc(e?classLabel(e.cls):"")+"</td>"+
+      [["rt","Reg"],["ot","O.T. 1.5&times;"],["dt","D.T. 2&times;"]]
+        .map(([k2,l])=>'<td class="n num half" data-l="'+l+'">'+(c[k2]?hrs(c[k2]):"")+"</td>").join("")+
+      '<td class="n num half" data-l="Hours">'+hrs((+c.rt||0)+(+c.ot||0)+(+c.dt||0))+
+      '</td><td class="n num" data-l="Cost">'+money(lineCost)+
+      '</td><td class="rm"><span class="mini" title="Change this on the Time clock tab">⏱</span></td></tr>';
   }).join("");
   const crewRows = clockRows + f.crew.filter(c=>!c.fromClock).map((c,k)=>{
     const e = emp(c.empId); const r = e?+e.rate||0:0; const s=db.settings;
     const lineCost = (+c.rt||0)*r+(+c.ot||0)*r*s.otMult+(+c.dt||0)*r*s.dtMult;
-    return '<tr><td><select data-a="crewEmp" data-f="'+f.id+'" data-k="'+k+'">'+empOpts(c.empId)+'</select></td>'+
-      ['rt','ot','dt'].map(h=>'<td class="n"><input class="h num" type="number" step="0.25" min="0" data-a="crewH" data-h="'+h+'" data-f="'+f.id+'" data-k="'+k+'" value="'+(c[h]||"")+'"></td>').join("")+
-      '<td class="n num" data-calc="rowhrs" data-f="'+f.id+'" data-k="'+k+'">'+hrs((+c.rt||0)+(+c.ot||0)+(+c.dt||0))+"</td>"+
-      '<td class="n num" data-calc="rowcost" data-f="'+f.id+'" data-k="'+k+'">'+money(lineCost)+"</td>"+
-      '<td><button class="x" data-a="crewDel" data-f="'+f.id+'" data-k="'+k+'" title="Remove">&times;</button></td></tr>';
+    return '<tr><td data-l="Employee"><select data-a="crewEmp" data-f="'+f.id+'" data-k="'+k+'">'+empOpts(c.empId)+'</select></td>'+
+      '<td class="mini" data-l="Class" data-calc="rowcls" data-f="'+f.id+'" data-k="'+k+'">'+esc(e?classLabel(e.cls):"")+"</td>"+
+      [["rt","Reg"],["ot","O.T. 1.5&times;"],["dt","D.T. 2&times;"]]
+        .map(([k2,l])=>'<td class="n half" data-l="'+l+'"><input class="h num" type="number" step="0.25" min="0" data-a="crewH" data-h="'+k2+'" data-f="'+f.id+'" data-k="'+k+'" value="'+(c[k2]||"")+'"></td>').join("")+
+      '<td class="n num half" data-l="Hours" data-calc="rowhrs" data-f="'+f.id+'" data-k="'+k+'">'+hrs((+c.rt||0)+(+c.ot||0)+(+c.dt||0))+"</td>"+
+      '<td class="n num" data-l="Cost" data-calc="rowcost" data-f="'+f.id+'" data-k="'+k+'">'+money(lineCost)+"</td>"+
+      '<td class="rm"><button class="x" data-a="crewDel" data-f="'+f.id+'" data-k="'+k+'" title="Remove">&times;</button></td></tr>';
   }).join("");
 
   const savOpts = v => ['<option value="">Pick one</option>'].concat(
@@ -4266,8 +4330,10 @@ function formHTML(f,i){
       '<label class="f" style="margin-top:9px">Detailed job description<textarea data-a="desc" data-f="'+f.id+'">'+esc(f.desc)+"</textarea></label>"+
 
       '<h3 style="font-size:12px;margin:14px 0 5px;color:var(--ink-2)">Crew</h3>'+
-      '<table><thead><tr><th style="width:34%">Employee</th><th class="n">Reg</th><th class="n">O.T. 1.5&times;</th><th class="n">D.T. 2&times;</th><th class="n">Hours</th><th class="n">Cost</th><th></th></tr></thead>'+
-      "<tbody>"+(crewRows||'<tr><td colspan="7" class="mini" style="padding:9px">No men on this form yet.</td></tr>')+"</tbody></table>"+
+      '<table class="stack"><thead><tr><th style="width:28%">Employee</th><th>Class</th><th class="n">Reg</th><th class="n">O.T. 1.5&times;</th><th class="n">D.T. 2&times;</th><th class="n">Hours</th><th class="n">Cost</th><th></th></tr></thead>'+
+      "<tbody>"+(crewRows||'<tr><td colspan="8" class="mini" style="padding:9px">No men on this form yet.</td></tr>')+"</tbody>"+
+      (f.crew.length ? '<tfoot data-calc="crewfoot" data-f="'+f.id+'">'+crewFootRow(f)+"</tfoot>" : "")+
+      "</table>"+
       (clockRows?'<p class="mini" style="margin:6px 0 0">Rows marked <span class="chip appr">clock</span> came from the time clock. Fix times, OT or DT on the Time clock tab; they follow here on their own.</p>':"")+
       '<button class="b ghost sm" style="margin-top:7px" data-a="crewAdd" data-f="'+f.id+'">Add man</button>'+
 
@@ -4341,9 +4407,12 @@ function refreshCalcs(){
     });
     f.crew.filter(c=>!c.fromClock).forEach((c,k)=>{
       const e = emp(c.empId), r = e ? +e.rate||0 : 0, s = db.settings;
+      set("rowcls", e ? classLabel(e.cls) : "", '[data-k="'+k+'"]');
       set("rowhrs", hrs((+c.rt||0)+(+c.ot||0)+(+c.dt||0)), '[data-k="'+k+'"]');
       set("rowcost", money((+c.rt||0)*r+(+c.ot||0)*r*s.otMult+(+c.dt||0)*r*s.dtMult), '[data-k="'+k+'"]');
     });
+    const cf = q("crewfoot");
+    if(cf) cf.innerHTML = f.crew.length ? crewFootRow(f) : "";
     f.materials.forEach((m,k)=>
       set("matamt", money((+m.qty||0)*(+m.unit||0)), '[data-k="'+k+'"]'));
     const mo = q("money");
@@ -5513,7 +5582,8 @@ $("xGoDaily").onclick = async ()=>{
           desc:[f.desc||"", prefabSummary(f),
                 f.savedTask?(f.savedTask+", "+hrs(f.savedHrs||0)+" more field hours saved"):""]
                .filter(Boolean).join("\n"),
-          crew:f.crew.filter(c=>c.empId).map(c=>({employee:(emp(c.empId)||{}).name||"", rt:+c.rt||0, ot:+c.ot||0, dt:+c.dt||0})),
+          crew:f.crew.filter(c=>c.empId).map(c=>({employee:(emp(c.empId)||{}).name||"",
+            cls:classLabel((emp(c.empId)||{}).cls), rt:+c.rt||0, ot:+c.ot||0, dt:+c.dt||0})),
           materials:f.materials.filter(m=>(+m.qty||0)||(m.desc||"").trim()).map(m=>({qty:+m.qty||0, desc:m.desc||"", unit:+m.unit||0})),
           money:[t.cost,"","",t.matCost,t.shopTotal]
         };
