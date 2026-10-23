@@ -234,7 +234,7 @@ label.f i{color:var(--red);font-style:normal;font-weight:700}
 .seg.warn button[aria-pressed="true"][data-v="Emergency"]{background:var(--red)}
 
 /* editable tables shared by every form */
-.tscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
 table.ftab{min-width:100%}
 table.ftab th{white-space:nowrap}
 table.ftab td{padding:3px 4px}
@@ -1143,6 +1143,12 @@ input[type=date]{text-align:left;min-width:0}
       <label class="f" id="rQtrWrap" hidden>Quarter<select id="rQtr"></select></label>
     </div>
     <div class="pobar"><span class="polab">POs</span><div id="rPos" class="pochips"></div></div>
+    <div class="row" style="margin-top:9px">
+      <label class="f" style="flex:1 1 280px">Find words on the forms<input type="text" id="rFind"
+        placeholder="rack, 2in emt, riverside, Ray Tolbert…"></label>
+      <button class="b ghost sm" id="rClear" style="align-self:flex-end">Clear</button>
+      <span class="mini" id="rFindNote" style="align-self:flex-end;padding-bottom:9px"></span>
+    </div>
   </div></div>
   <div id="reportOut"></div>
 </section>
@@ -1170,6 +1176,11 @@ input[type=date]{text-align:left;min-width:0}
     <div class="row" style="margin-top:9px">
       <label class="f">Project manager<select id="xPm"></select></label>
       <label class="f" style="flex:1 1 100%"><span>POs</span><div id="xPos" class="pochips"></div></label>
+    </div>
+    <div class="row" style="margin-top:9px">
+      <label class="f" style="flex:1 1 300px">Only forms with these words<input type="text" id="xFind"
+        placeholder="rack, 2in emt, riverside, Ray Tolbert…"></label>
+      <button class="b ghost sm" id="xClear" style="align-self:flex-end">Clear</button>
     </div>
     <div id="xPreview"></div>
     <div class="row" style="margin-top:4px">
@@ -4537,6 +4548,34 @@ function collect(filter){
   });
   return out;
 }
+/* Everything readable on one job form, flattened, for searching: the PO and
+   job name, the PM, the work description, the men on it, the materials, the
+   prefab lines and the saved-task note. Lower case, so the search never cares
+   about capitals. */
+function formHaystack(r){
+  const f = r.form;
+  const bits = [r.job.po, r.job.name, r.pm.name, f.desc, f.savedTask];
+  (f.crew||[]).forEach(c=>{ const e = emp(c.empId); if(e) bits.push(e.name, e.cls); });
+  (f.materials||[]).forEach(m=>bits.push(m.desc));
+  (f.prefab||[]).forEach(l=>{ const it = savItem(l.itemId); if(it) bits.push(it.name, it.unit); });
+  if(f.breakEven) bits.push("broke even break even");
+  return bits.filter(Boolean).join(" ").toLowerCase();
+}
+/* Every word has to be in there somewhere. "rack 8069" finds forms that
+   mention both, in any order, in any case. A "quoted phrase" stays together. */
+function searchTerms(q){
+  const out = [], s = String(q||"").toLowerCase();
+  const re = /"([^"]+)"|(\S+)/g;
+  let m;
+  while((m = re.exec(s))) out.push((m[1] || m[2]).trim());
+  return out.filter(Boolean);
+}
+function formMatches(r, terms){
+  if(!terms.length) return true;
+  const hay = formHaystack(r);
+  return terms.every(t=>hay.includes(t));
+}
+
 function weeksIn(list){ return [...new Set(list.map(r=>r.we))].sort(); }
 
 /* build the per-PM sheet data the exporter wants */
@@ -4708,16 +4747,45 @@ function renderReports(){
     list = list.filter(r=>rPoSel.has(r.job.id));
     title += " · "+rPoSel.size+" PO"+(rPoSel.size===1?"":"s");
   }
+  /* keyword search over everything written on the forms */
+  {
+    const terms = searchTerms($("rFind").value);
+    const before = list.length;
+    if(terms.length){
+      list = list.filter(r=>formMatches(r, terms));
+      title += ' · "'+terms.join('" "')+'"';
+    }
+    $("rFindNote").textContent = terms.length
+      ? list.length+" of "+before+" job form"+(before===1?"":"s")+" match"
+      : "";
+  }
 
   if(!list.length){ $("reportOut").innerHTML='<div class="card"><div class="empty">Nothing entered for '+esc(title)+" yet.</div></div>"; return; }
 
   const grand = sumTotals(list.map(r=>r.t));
   let html = '<div class="card"><h2>'+esc(title)+'<span class="tag">'+list.length+' job forms</span></h2><div class="body"><div class="tot">'+totalStrip(grand)+"</div></div></div>";
 
+  /* when a search is on, show which forms it caught before anything is printed */
+  if(searchTerms($("rFind").value).length){
+    html += '<div class="card"><h2>The forms that matched<span class="tag">Export sends exactly these</span></h2>'+
+      '<div class="body"><table class="stack"><thead><tr><th>Date</th><th>PO</th><th>Job</th>'+
+      '<th>What was done</th><th class="n">Hours</th><th class="n">Cost</th></tr></thead><tbody>'+
+      list.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.job.po).localeCompare(String(b.job.po)))
+        .map(r=>{
+          const note = [r.form.desc, prefabSummary(r.form)].filter(Boolean).join(" · ");
+          return '<tr><td class="num half" data-l="Date">'+D.us(r.date)+'</td>'+
+            '<td class="half r" data-l="PO">'+esc(r.job.po)+'</td>'+
+            '<td data-l="Job">'+esc(r.job.name||"")+'</td>'+
+            '<td data-l="What was done">'+esc(note.slice(0,160))+'</td>'+
+            '<td class="n num half" data-l="Hours">'+hrs(r.t.hours)+'</td>'+
+            '<td class="n num half r" data-l="Cost">'+money(r.t.shopTotal)+"</td></tr>";
+        }).join("")+"</tbody></table></div></div>";
+  }
+
   // by PM
   const pms = {};
   list.forEach(r=>{ (pms[r.pm.id] = pms[r.pm.id]||{pm:r.pm,rows:[]}).rows.push(r); });
-  html += '<div class="card"><h2>By project manager</h2><div class="body"><table><thead><tr><th>PM</th><th class="n">RT</th><th class="n">OT</th><th class="n">DT</th><th class="n">Shop hrs</th><th class="n">Shop cost</th><th class="n">Field hrs saved</th><th class="n">Net hrs saved</th><th class="n">Field cost avoided</th><th class="n">Net saved</th></tr></thead><tbody>';
+  html += '<div class="card"><h2>By project manager</h2><div class="body"><div class="tscroll"><table><thead><tr><th>PM</th><th class="n">RT</th><th class="n">OT</th><th class="n">DT</th><th class="n">Shop hrs</th><th class="n">Shop cost</th><th class="n">Field hrs saved</th><th class="n">Net hrs saved</th><th class="n">Field cost avoided</th><th class="n">Net saved</th></tr></thead><tbody>';
   Object.values(pms).sort((a,b)=>a.pm.name.localeCompare(b.pm.name)).forEach(g=>{
     const t = sumTotals(g.rows.map(r=>r.t));
     html += "<tr><td>"+esc(g.pm.name)+"</td>"+[t.rt,t.ot,t.dt,t.hours].map(v=>'<td class="n num">'+hrs(v)+"</td>").join("")+
@@ -4725,12 +4793,12 @@ function renderReports(){
       '</td><td class="n num">'+hrs(t.netHrs)+'</td><td class="n num">'+money(t.fieldValue)+
       '</td><td class="n num">'+money(t.net)+"</td></tr>";
   });
-  html += "</tbody></table></div></div>";
+  html += "</tbody></table></div></div></div>";
 
   // by PO
   const jobs = {};
   list.forEach(r=>{ (jobs[r.job.id] = jobs[r.job.id]||{job:r.job,rows:[]}).rows.push(r); });
-  html += '<div class="card"><h2>By PO</h2><div class="body"><table><thead><tr><th>PO</th><th>Job</th><th>PM</th><th class="n">Shop hrs</th><th class="n">Shop labor</th><th class="n">Material</th><th class="n">Shop cost</th><th class="n">Field hrs saved</th><th class="n">Net hrs saved</th><th class="n">Net saved</th></tr></thead><tbody>';
+  html += '<div class="card"><h2>By PO</h2><div class="body"><div class="tscroll"><table><thead><tr><th>PO</th><th>Job</th><th>PM</th><th class="n">Shop hrs</th><th class="n">Shop labor</th><th class="n">Material</th><th class="n">Shop cost</th><th class="n">Field hrs saved</th><th class="n">Net hrs saved</th><th class="n">Net saved</th></tr></thead><tbody>';
   Object.values(jobs).sort((a,b)=>a.job.po.localeCompare(b.job.po)).forEach(g=>{
     const t = sumTotals(g.rows.map(r=>r.t));
     html += "<tr><td>"+esc(g.job.po)+"</td><td>"+esc(g.job.name)+"</td><td>"+esc((pm(g.job.pmId)||{}).name||"")+"</td>"+
@@ -4738,7 +4806,7 @@ function renderReports(){
       '</td><td class="n num">'+money(t.shopTotal)+'</td><td class="n num">'+hrs(t.savedHrs)+
       '</td><td class="n num">'+hrs(t.netHrs)+'</td><td class="n num">'+money(t.net)+"</td></tr>";
   });
-  html += "</tbody></table></div></div>";
+  html += "</tbody></table></div></div></div>";
 
   // by man
   const men = {};
@@ -4770,9 +4838,10 @@ function renderReports(){
       [["RT",b.rt],["OT",b.ot],["DT",b.dt],["Hours",b.rt+b.ot+b.dt]].map(([l,v])=>'<td class="n num half" data-l="'+l+'">'+hrs(v)+"</td>").join("")+
       '<td class="n num" data-l="Cost">'+money(b.cost)+"</td></tr>";
   });
-  html += '</tbody><tfoot><tr><td>Total</td><td class="n num">'+crewRows.length+"</td>"+
-    [mTot.rt,mTot.ot,mTot.dt,mTot.rt+mTot.ot+mTot.dt].map(v=>'<td class="n num">'+hrs(v)+"</td>").join("")+
-    '<td class="n num">'+money(mTot.cost)+"</td></tr></tfoot></table>"+
+  html += '</tbody><tfoot><tr><td data-l="">Total</td><td class="n num half" data-l="Men">'+crewRows.length+"</td>"+
+    [["RT",mTot.rt],["OT",mTot.ot],["DT",mTot.dt],["Hours",mTot.rt+mTot.ot+mTot.dt]]
+      .map(([l,v])=>'<td class="n num half" data-l="'+l+'">'+hrs(v)+"</td>").join("")+
+    '<td class="n num" data-l="Cost">'+money(mTot.cost)+"</td></tr></tfoot></table>"+
     (cls["Unassigned"] ? '<p class="hint">Men with no classification are counted but cannot be split out. Crew tab, set them once and every past week reports correctly.</p>' : "")+
     "</div></div>";
 
@@ -4782,9 +4851,10 @@ function renderReports(){
       [["RT",m.rt],["OT",m.ot],["DT",m.dt],["Hours",m.rt+m.ot+m.dt]].map(([l,v])=>'<td class="n num half" data-l="'+l+'">'+hrs(v)+"</td>").join("")+
       '<td class="n num" data-l="Cost">'+money(m.cost)+"</td></tr>";
   });
-  html += '</tbody><tfoot><tr><td>Total</td><td></td>'+
-    [mTot.rt,mTot.ot,mTot.dt,mTot.rt+mTot.ot+mTot.dt].map(v=>'<td class="n num">'+hrs(v)+"</td>").join("")+
-    '<td class="n num">'+money(mTot.cost)+"</td></tr></tfoot></table></div></div>";
+  html += '</tbody><tfoot><tr><td data-l="">Total</td><td class="half" data-l=""></td>'+
+    [["RT",mTot.rt],["OT",mTot.ot],["DT",mTot.dt],["Hours",mTot.rt+mTot.ot+mTot.dt]]
+      .map(([l,v])=>'<td class="n num half" data-l="'+l+'">'+hrs(v)+"</td>").join("")+
+    '<td class="n num" data-l="Cost">'+money(mTot.cost)+"</td></tr></tfoot></table></div></div>";
 
   /* who put how many hours on which PO, when the work is spread over several */
   {
@@ -4821,7 +4891,7 @@ function renderReports(){
     extra += +r.form.savedHrs||0;
   });
   if(Object.keys(sav).length || extra){
-    html += '<div class="card"><h2>What the shop saved the field</h2><div class="body"><table><thead><tr><th>What was prefabbed</th><th class="n">Quantity</th><th class="n">Field hrs saved</th><th class="n">Worth</th></tr></thead><tbody>';
+    html += '<div class="card"><h2>What the shop saved the field</h2><div class="body"><div class="tscroll"><table><thead><tr><th>What was prefabbed</th><th class="n">Quantity</th><th class="n">Field hrs saved</th><th class="n">Worth</th></tr></thead><tbody>';
     Object.values(sav).sort((a,b)=>b.hrs-a.hrs).forEach(b=>{
       html += "<tr><td>"+esc(b.name)+'</td><td class="n num">'+b.qty.toLocaleString()+" "+esc(b.unit)+
         '</td><td class="n num">'+hrs(b.hrs)+'</td><td class="n num">'+money(b.hrs*db.settings.fieldRate)+"</td></tr>";
@@ -4835,11 +4905,14 @@ function renderReports(){
       '<tr><td>Less shop hours spent</td><td class="n"></td><td class="n num">-'+hrs(grand.hours)+
       '</td><td class="n num">-'+money(grand.shopTotal)+"</td></tr>"+
       '<tr><td><strong>NET SAVED</strong></td><td class="n"></td><td class="n num">'+hrs(grand.netHrs)+
-      '</td><td class="n num">'+money(grand.net)+"</td></tr></tfoot></table></div></div>";
+      '</td><td class="n num">'+money(grand.net)+"</td></tr></tfoot></table></div></div></div>";
   }
   $("reportOut").innerHTML = html;
 }
 ["rMode","rDay","rWeek","rMonth","rQtr"].forEach(id=>$(id).onchange = renderReports);
+let rFindT;
+$("rFind").oninput = ()=>{ clearTimeout(rFindT); rFindT = setTimeout(renderReports, 220); };
+$("rClear").onclick = ()=>{ $("rFind").value = ""; renderReports(); };
 
 /* ---------------------------------------------------------------- settings */
 const SETFIELDS = [
@@ -5231,9 +5304,12 @@ function scoped(){
   [...xPoSel].forEach(id=>{ if(!inSpan.some(j=>j.id===id)) xPoSel.delete(id); });
   poChips("xPos", inSpan, xPoSel, preview);
   if(xPoSel.size) recs = recs.filter(r=>xPoSel.has(r.job.id));
+  const terms = searchTerms($("xFind") ? $("xFind").value : "");
+  if(terms.length) recs = recs.filter(r=>formMatches(r, terms));
   let label = s.label;
   if(pmId) label += " · "+(pm(pmId)||{}).name;
   if(xPoSel.size) label += " · "+[...xPoSel].map(id=>(job(id)||{}).po).sort().join(", ");
+  if(terms.length) label += ' · "'+terms.join('" "')+'"';
   return {s, recs, label};
 }
 function preview(){
@@ -5251,6 +5327,9 @@ function preview(){
       ", "+formsOut+" job form"+(formsOut===1?"":"s")+".</div>"
     : '<div class="flag">Nothing entered for '+esc(label)+".</div>";
 }
+let xFindT;
+$("xFind").oninput = ()=>{ clearTimeout(xFindT); xFindT = setTimeout(preview, 220); };
+$("xClear").onclick = ()=>{ $("xFind").value = ""; preview(); };
 ["xScope","xDay","xWeek","xMonth","xQtr","xFrom","xTo","xPm"].forEach(id=>{
   $(id).onchange = ()=> (id==="xScope" ? showScope() : preview());
 });
