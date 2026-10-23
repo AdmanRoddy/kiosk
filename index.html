@@ -976,7 +976,8 @@ input[type=date]{text-align:left;min-width:0}
         <button class="b" id="cAdd">Add to crew</button>
       </div>
       <p class="hint">Cost rate is what the man costs Adman per straight-time hour. Overtime and double time use the multipliers on Settings.</p>
-      <div id="crewTable"></div>
+      <div id="clsFix"></div>
+    <div id="crewTable"></div>
     </div>
   </div>
 </section>
@@ -3919,6 +3920,47 @@ const hrs = v => (Math.round(v*100)/100).toLocaleString(undefined,{minimumFracti
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
 /* ---------------------------------------------------------------- lookups */
+/* The ladder, in the order the shop reads it: journeyman, then apprentice by
+   year, then helper. Everything already typed into the crew list gets matched
+   onto one of these, so a report sorts the same way whether a man was put in
+   as "1st", "App 1st" or "1st year". Anything that is none of them keeps its
+   own name and sorts after, which is where Prefab Manager lands. */
+const CLASS_LADDER = [
+  {key:"JW",      group:"JW",     test:/^(jw|journeyman|journey|j\/w|jrnymn)/i},
+  {key:"App 1st", group:"App",    test:/^(app[\s-]*1|1st|1\s*yr|1\s*year|first)/i},
+  {key:"App 2nd", group:"App",    test:/^(app[\s-]*2|2nd|2\s*yr|2\s*year|second)/i},
+  {key:"App 3rd", group:"App",    test:/^(app[\s-]*3|3rd|3\s*yr|3\s*year|third)/i},
+  {key:"App 4th", group:"App",    test:/^(app[\s-]*4|4th|4\s*yr|4\s*year|fourth)/i},
+  {key:"App 5th", group:"App",    test:/^(app[\s-]*5|5th|5\s*yr|5\s*year|fifth)/i},
+  {key:"App",     group:"App",    test:/^(app|apprentice)/i},
+  {key:"Helper",  group:"Helper", test:/^(help|hlp|labou?r)/i}
+];
+const CLASS_NAMES = CLASS_LADDER.map(c=>c.key);
+function classStep(cls){
+  const s = String(cls||"").trim();
+  if(!s) return null;
+  return CLASS_LADDER.find(c=>c.test.test(s)) || null;
+}
+/* what to print: the ladder name if we know it, otherwise what was typed */
+function classLabel(cls){
+  const st = classStep(cls);
+  return st ? st.key : (String(cls||"").trim() || "Unassigned");
+}
+function classGroup(cls){
+  const st = classStep(cls);
+  return st ? st.group : (String(cls||"").trim() ? "Other" : "Unassigned");
+}
+/* sort key: ladder order first, then anything else by name, blanks last */
+function classRank(cls){
+  const st = classStep(cls);
+  if(st) return CLASS_LADDER.indexOf(st);
+  return String(cls||"").trim() ? 90 : 99;
+}
+const byClassThenName = (a,b) =>
+  (classRank(a.cls) - classRank(b.cls)) ||
+  String(classLabel(a.cls)).localeCompare(String(classLabel(b.cls))) ||
+  String(a.name||"").localeCompare(String(b.name||""));
+
 const emp = id => db.employees.find(e=>e.id===id);
 const job = id => db.jobs.find(j=>j.id===id);
 const pm  = id => db.pms.find(p=>p.id===id);
@@ -4345,12 +4387,55 @@ $("cAdd").onclick = ()=>{
   db.employees.push({id:uid(), name:n, cls:$("cClass").value.trim(), rate:+$("cRate").value||0, pin, badge, active:true});
   $("cName").value=$("cClass").value=$("cRate").value=$("cPin").value=$("cBadge").value=""; save(); renderCrew();
 };
+/* Reports go by classification, so a man with none is a hole in every one of
+   them. They are gathered here rather than left to be hunted down the list. */
+function renderClassFix(){
+  const el = $("clsFix"); if(!el) return;
+  const blank = db.employees.filter(e=>e.active!==false && !String(e.cls||"").trim());
+  const spread = {};
+  db.employees.filter(e=>e.active!==false).forEach(e=>{
+    const k = classLabel(e.cls); spread[k] = (spread[k]||0)+1;
+  });
+  const order = Object.keys(spread).sort((a,b)=>
+    (classRank(a)-classRank(b)) || a.localeCompare(b));
+  let html = '<div class="row" style="gap:14px;margin-bottom:10px">'+
+    order.map(k=>'<span class="mini"'+(k==="Unassigned"?' style="color:var(--red);font-weight:700"':"")+'>'+
+      esc(k)+' <strong>'+spread[k]+"</strong></span>").join("")+"</div>";
+  if(blank.length){
+    html += '<div class="flag warn"><strong>'+blank.length+" "+(blank.length===1?"man has":"men have")+
+      " no classification.</strong> Reports by class leave them out until they have one. Set them here and every week already entered reports correctly, because the class is read off the man, not copied onto the old sheets.</div>"+
+      '<div class="tscroll"><table class="ftab stack"><tbody>'+
+      blank.sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""))).map(e=>
+        '<tr><td data-l="Name">'+esc(e.name||"(no name)")+"</td>"+
+        '<td data-l="Classification"><select data-fix="'+e.id+'"><option value="">— pick one —</option>'+
+        CLASS_NAMES.map(k=>'<option value="'+k+'">'+k+"</option>").join("")+"</select></td></tr>").join("")+
+      "</tbody></table></div>";
+  }
+  el.innerHTML = html;
+  el.querySelectorAll("[data-fix]").forEach(s=>s.onchange=()=>{
+    const e = emp(s.dataset.fix); if(!e || !s.value) return;
+    e.cls = s.value; save(); renderCrew();
+  });
+}
+
+/* a dropdown of the ladder, but it never throws away something already typed */
+function clsPicker(e){
+  const cur = String(e.cls||"").trim();
+  const step = classStep(cur);
+  const known = step ? step.key : "";
+  const extra = (!step && cur) ? '<option value="'+esc(cur)+'" selected>'+esc(cur)+" (as typed)</option>" : "";
+  return '<select data-e="'+e.id+'" data-p="cls"'+(cur?"":' style="border-color:var(--warn);background:#fdf7ec"')+">"+
+    '<option value=""'+(cur?"":" selected")+">— not set —</option>"+ extra +
+    CLASS_NAMES.map(k=>'<option value="'+k+'"'+(known===k?" selected":"")+">"+k+"</option>").join("")+
+    "</select>";
+}
 function renderCrew(){
+  renderClassFix();
   $("crewTable").innerHTML = !db.employees.length
     ? '<div class="empty">No crew yet. Add the men who work in the shop. You only do this once.</div>'
     : '<table><thead><tr><th>Name</th><th>Class</th><th class="n">Cost $/hr</th><th class="n">OT $/hr</th><th class="n">DT $/hr</th><th>Active</th><th></th></tr></thead><tbody>'+
-      db.employees.map((e,i)=>'<tr><td><input type="text" data-e="'+e.id+'" data-p="name" value="'+esc(e.name)+'"></td>'+
-        '<td><input type="text" data-e="'+e.id+'" data-p="cls" value="'+esc(e.cls||"")+'"></td>'+
+      db.employees.slice().sort(byClassThenName).map((e,i)=>'<tr><td><input type="text" data-e="'+e.id+'" data-p="name" value="'+esc(e.name)+'"></td>'+
+        '<td>'+clsPicker(e)+'</td>'+
         '<td class="n"><input class="h num" type="number" step="0.01" data-e="'+e.id+'" data-p="rate" value="'+(e.rate||0)+'"></td>'+
         '<td class="n num">'+money((e.rate||0)*db.settings.otMult)+"</td>"+
         '<td class="n num">'+money((e.rate||0)*db.settings.dtMult)+"</td>"+
@@ -4599,15 +4684,46 @@ function renderReports(){
   list.forEach(r=>r.form.crew.forEach(c=>{
     if(!c.empId) return; const e=emp(c.empId); if(!e) return;
     const s=db.settings, rate=+e.rate||0;
-    const b = men[c.empId] = men[c.empId]||{name:e.name,rt:0,ot:0,dt:0,cost:0};
+    const b = men[c.empId] = men[c.empId]||{name:e.name,cls:e.cls,rt:0,ot:0,dt:0,cost:0};
     b.rt+=+c.rt||0; b.ot+=+c.ot||0; b.dt+=+c.dt||0;
     b.cost += (+c.rt||0)*rate+(+c.ot||0)*rate*s.otMult+(+c.dt||0)*rate*s.dtMult;
   }));
-  html += '<div class="card"><h2>By man</h2><div class="body"><table><thead><tr><th>Employee</th><th class="n">RT</th><th class="n">OT</th><th class="n">DT</th><th class="n">Hours</th><th class="n">Cost</th></tr></thead><tbody>';
-  Object.values(men).sort((a,b)=>a.name.localeCompare(b.name)).forEach(m=>{
-    html += "<tr><td>"+esc(m.name)+"</td>"+[m.rt,m.ot,m.dt,m.rt+m.ot+m.dt].map(v=>'<td class="n num">'+hrs(v)+"</td>").join("")+'<td class="n num">'+money(m.cost)+"</td></tr>";
+  const crewRows = Object.values(men).sort(byClassThenName);
+  const mTot = crewRows.reduce((a,m)=>{ a.rt+=m.rt; a.ot+=m.ot; a.dt+=m.dt; a.cost+=m.cost; return a; },
+                                {rt:0,ot:0,dt:0,cost:0});
+
+  /* rolled up to the classification first, because that is the number that
+     gets asked for; the man by man list is underneath it */
+  const cls = {};
+  crewRows.forEach(m=>{
+    const k = classLabel(m.cls);
+    const b = cls[k] = cls[k] || {men:0,rt:0,ot:0,dt:0,cost:0};
+    b.men++; b.rt+=m.rt; b.ot+=m.ot; b.dt+=m.dt; b.cost+=m.cost;
   });
-  html += "</tbody></table></div></div>";
+  const clsKeys = Object.keys(cls).sort((a,b)=>(classRank(a)-classRank(b))||a.localeCompare(b));
+  html += '<div class="card"><h2>By class</h2><div class="body"><table class="stack"><thead><tr><th>Class</th><th class="n">Men</th><th class="n">RT</th><th class="n">OT</th><th class="n">DT</th><th class="n">Hours</th><th class="n">Cost</th></tr></thead><tbody>';
+  clsKeys.forEach(k=>{
+    const b = cls[k];
+    html += '<tr><td data-l="Class"'+(k==="Unassigned"?' style="color:var(--red);font-weight:700"':"")+">"+esc(k)+"</td>"+
+      '<td class="n num half" data-l="Men">'+b.men+"</td>"+
+      [["RT",b.rt],["OT",b.ot],["DT",b.dt],["Hours",b.rt+b.ot+b.dt]].map(([l,v])=>'<td class="n num half" data-l="'+l+'">'+hrs(v)+"</td>").join("")+
+      '<td class="n num" data-l="Cost">'+money(b.cost)+"</td></tr>";
+  });
+  html += '</tbody><tfoot><tr><td>Total</td><td class="n num">'+crewRows.length+"</td>"+
+    [mTot.rt,mTot.ot,mTot.dt,mTot.rt+mTot.ot+mTot.dt].map(v=>'<td class="n num">'+hrs(v)+"</td>").join("")+
+    '<td class="n num">'+money(mTot.cost)+"</td></tr></tfoot></table>"+
+    (cls["Unassigned"] ? '<p class="hint">Men with no classification are counted but cannot be split out. Crew tab, set them once and every past week reports correctly.</p>' : "")+
+    "</div></div>";
+
+  html += '<div class="card"><h2>By man<span class="tag">JW, then apprentice by year, then helper</span></h2><div class="body"><table class="stack"><thead><tr><th>Employee</th><th>Class</th><th class="n">RT</th><th class="n">OT</th><th class="n">DT</th><th class="n">Hours</th><th class="n">Cost</th></tr></thead><tbody>';
+  crewRows.forEach(m=>{
+    html += '<tr><td data-l="Employee">'+esc(m.name)+'</td><td class="half" data-l="Class">'+esc(classLabel(m.cls))+"</td>"+
+      [["RT",m.rt],["OT",m.ot],["DT",m.dt],["Hours",m.rt+m.ot+m.dt]].map(([l,v])=>'<td class="n num half" data-l="'+l+'">'+hrs(v)+"</td>").join("")+
+      '<td class="n num" data-l="Cost">'+money(m.cost)+"</td></tr>";
+  });
+  html += '</tbody><tfoot><tr><td>Total</td><td></td>'+
+    [mTot.rt,mTot.ot,mTot.dt,mTot.rt+mTot.ot+mTot.dt].map(v=>'<td class="n num">'+hrs(v)+"</td>").join("")+
+    '<td class="n num">'+money(mTot.cost)+"</td></tr></tfoot></table></div></div>";
 
   const sav = {}; let extra = 0;
   list.forEach(r=>{
@@ -4723,7 +4839,7 @@ function renderSettings(){
           ? '<div class="flag good"><strong>Signed in as '+esc(SB.user.email||"the shop")+'.</strong> '+
             'This machine can see and change everything. '+
             '<button class="b ghost sm" id="sbOut" style="margin-left:6px">Sign out</button></div>'
-          : (SB.on
+          : (SB.on && SB.field
               ? '<div class="flag warn"><strong>This device is not signed in.</strong> It can send orders and read stand counts, nothing else. '+
                 '<button class="b ghost sm" id="sbIn" style="margin-left:6px">Sign in</button></div>'
               : "");
@@ -5073,14 +5189,31 @@ $("xGo").onclick = async ()=>{
       b.rt+=+c.rt||0; b.ot+=+c.ot||0; b.dt+=+c.dt||0;
       b.cost += (+c.rt||0)*rate + (+c.ot||0)*rate*st.otMult + (+c.dt||0)*rate*st.dtMult;
     }));
+    /* journeyman, then apprentice by year, then helper, the way the shop reads it */
+    const crewRows = Object.values(men).sort(byClassThenName);
     rows.push([]); rows.push([{v:"By man",bold:true}]);
     rows.push(["Employee","Class","Straight (RT)","Time & half (OT)","Double (DT)","Total hrs","Shop cost"].map(h=>({v:h,bold:true})));
     const mt = {rt:0,ot:0,dt:0,cost:0};
-    Object.values(men).sort((a,b)=>a.name.localeCompare(b.name)).forEach(m=>{
-      rows.push([m.name, m.cls, m.rt, m.ot, m.dt, m.rt+m.ot+m.dt, m.cost]);
+    crewRows.forEach(m=>{
+      rows.push([m.name, classLabel(m.cls), m.rt, m.ot, m.dt, m.rt+m.ot+m.dt, m.cost]);
       mt.rt+=m.rt; mt.ot+=m.ot; mt.dt+=m.dt; mt.cost+=m.cost;
     });
     rows.push([{v:"TOTAL",bold:true},"",mt.rt,mt.ot,mt.dt,mt.rt+mt.ot+mt.dt,mt.cost]);
+
+    /* and the same thing rolled up to the classification */
+    const byCls = {};
+    crewRows.forEach(m=>{
+      const k = classLabel(m.cls);
+      const b = byCls[k] = byCls[k] || {cls:m.cls, men:0, rt:0, ot:0, dt:0, cost:0};
+      b.men++; b.rt+=m.rt; b.ot+=m.ot; b.dt+=m.dt; b.cost+=m.cost;
+    });
+    rows.push([]); rows.push([{v:"By class",bold:true}]);
+    rows.push(["Class","Men","Straight (RT)","Time & half (OT)","Double (DT)","Total hrs","Shop cost"].map(h=>({v:h,bold:true})));
+    Object.keys(byCls).sort((a,b)=>(classRank(a)-classRank(b))||a.localeCompare(b)).forEach(k=>{
+      const b = byCls[k];
+      rows.push([k, b.men, b.rt, b.ot, b.dt, b.rt+b.ot+b.dt, b.cost]);
+    });
+    rows.push([{v:"TOTAL",bold:true},crewRows.length,mt.rt,mt.ot,mt.dt,mt.rt+mt.ot+mt.dt,mt.cost]);
 
     if(months.length>1){
       rows.push([]); rows.push([{v:"By month",bold:true}]);
@@ -5288,15 +5421,29 @@ async function sbConnect(quiet){
       await sbPull();
       if(!quiet) sbMsg("Connected and signed in as "+esc(SB.user.email||"the shop")+".","good");
     } else {
-      /* not signed in: a field device. Stand counts in, orders out, nothing else. */
-      SB.field = true;
-      const r = await SB.client.from("stock_public").select("*").limit(1);
-      if(r.error) throw new Error("Could not read the stock counts: "+r.error.message+
-        "  The shop may not have run the lockdown SQL yet.");
-      SB.on = true; SB.err = ""; sbTag();
-      await fetchStock();
-      await flushPendingOrders();
-      if(!quiet) sbMsg("Connected as a field device: stand counts and sending orders.","good");
+      /* Not signed in. If the shop has run the lockdown, this is a field
+         device: counts in, orders out, nothing else. If it has not run yet,
+         the key still reaches everything, so carry on exactly as before
+         rather than locking anyone out of a database that is still open. */
+      const probe = await SB.client.from("stock_public").select("*").limit(1);
+      if(!probe.error){
+        SB.field = true;
+        SB.on = true; SB.err = ""; sbTag();
+        await fetchStock();
+        await flushPendingOrders();
+        if(!quiet) sbMsg("Connected as a field device: stand counts and sending orders.","good");
+      } else {
+        SB.field = false;
+        const r = await SB.client.from("employees").select("id").limit(1);
+        if(r.error) throw new Error(r.error.message +
+          (/schema|does not exist|not find|permission/i.test(r.error.message)
+            ? "  Either sign in with the shop account, or check that '"+schema+
+              "' is listed under Settings, API, Exposed schemas."
+            : ""));
+        SB.on = true; SB.err = ""; sbTag();
+        await sbPull();
+        if(!quiet) sbMsg("Connected. This device is not signed in, and the database is still open to this key, so it can see everything. Running lockdown.sql closes that.","warn");
+      }
     }
     return true;
   }catch(e){ SB.on=false; sbTag(); sbMsg("Could not connect: "+esc(e.message)); return false; }
@@ -6525,7 +6672,10 @@ document.querySelectorAll("#field nav button").forEach(b=>{
    server, the passcode is the only thing between you and the office. On a
    device holding the public key, the office needs the shop sign-in, because
    that key genuinely cannot read any of it. */
-function officeNeedsSignIn(){ return SB.on && !SB.local && !SB.user; }
+/* Only once the lockdown is actually in force (this device is in field mode)
+   does the office need the shop account. Before that, the passcode is the
+   door, exactly as it has always been. */
+function officeNeedsSignIn(){ return SB.on && !SB.local && SB.field; }
 function openOffice(){ setMode("office"); renderDaily(); refreshBadge(); renderSettings(); }
 $("fOffice").onclick = ()=>{
   if(officeNeedsSignIn()) return showSignIn();
