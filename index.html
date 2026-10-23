@@ -3418,11 +3418,51 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
 
   /* blocksOut: [{rows:[xml...], height, merges:[[c1,r1,c2,r2] block-local]}] */
-  function assemble(tpl, blocksOut, dimCol) {
+  /* How tall a block prints, in points. Every row on these forms carries its own
+     height; anything without one falls back to the sheet default. */
+  function blockPoints(tpl, rows) {
+    const d = tpl.head.match(/defaultRowHeight="([0-9.]+)"/);
+    const def = d ? +d[1] : 15;
+    return rows.reduce((a, xml) => {
+      if (/ hidden="(1|true)"/.test(xml)) return a;
+      const m = xml.match(/ ht="([0-9.]+)"/);
+      return a + (m ? +m[1] : def);
+    }, 0);
+  }
+  /* A form is supposed to be one page. The template ships a fixed print scale,
+     which is right until a form grows past the paper and spills onto a second
+     sheet with no header on it. So: measure the tallest block and pull the scale
+     down until that one fits. Shorter blocks just get slack, and the scale is
+     never raised above what the template asked for. */
+  const SCALE_FLOOR = 45;
+  function fitScale(tail, tallestPts) {
+    const ps = (tail.match(/<pageSetup[^>]*\/?>/) || [])[0];
+    if (!ps || !tallestPts) return tail;
+    const pm = (tail.match(/<pageMargins[^>]*\/?>/) || [])[0] || "";
+    const num = (s, k, d) => { const m = s.match(new RegExp(k + '="([0-9.]+)"')); return m ? +m[1] : d; };
+    const paper = num(ps, "paperSize", 1);
+    const inches = paper === 9 ? [8.27, 11.69] : [8.5, 11];          // A4, else Letter
+    const tall = /orientation="landscape"/.test(ps) ? inches[0] : inches[1];
+    const usable = (tall - num(pm, "top", 0.75) - num(pm, "bottom", 0.75)) * 72;
+    if (usable <= 72) return tail;
+    const now = num(ps, "scale", 100);
+    /* a hair of slack, so a form that already prints on one page is left at the
+       scale the template asked for instead of being nudged a point smaller */
+    if (tallestPts * now / 100 <= usable * 1.02) return tail;
+    const want = Math.floor(usable / tallestPts * 100);
+    const next = Math.max(SCALE_FLOOR, Math.min(now, want));
+    if (next >= now) return tail;
+    const ps2 = / scale="/.test(ps)
+      ? ps.replace(/ scale="[0-9.]+"/, ' scale="' + next + '"')
+      : ps.replace("<pageSetup", '<pageSetup scale="' + next + '"');
+    return tail.replace(ps, ps2);
+  }
+  function assemble(tpl, blocksOut, dimCol, onePagePerBlock) {
     const body = [], brk = [], mg = [];
-    let off = 0;
+    let off = 0, tallest = 0;
     blocksOut.forEach((b, i) => {
       if (i > 0) brk.push('<brk id="' + off + '" man="true" max="16383" min="0"/>');
+      if (onePagePerBlock) tallest = Math.max(tallest, blockPoints(tpl, b.rows));
       b.rows.forEach((xml) => body.push(shiftRow(xml, 0, off)));
       (b.merges || []).forEach((z) =>
         mg.push('<mergeCell ref="' + z[0] + (z[1] + off) + ":" + z[2] + (z[3] + off) + '"/>'));
@@ -3433,7 +3473,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const bodyRows = body;
     const mgx = mg.length ? '<mergeCells count="' + mg.length + '">' + mg.join("") + "</mergeCells>" : "";
     var mg_ = mgx;
-    return head + "<sheetData>" + bodyRows.join("") + "</sheetData>" + mg_ + tpl.tail +
+    return head + "<sheetData>" + bodyRows.join("") + "</sheetData>" + mg_ + fitScale(tpl.tail, tallest) +
       (brk.length ? '<rowBreaks count="' + brk.length + '" manualBreakCount="' + brk.length + '">' +
         brk.join("") + "</rowBreaks>" : "") +
       '<drawing r:id="rId1"/></worksheet>';
@@ -3580,7 +3620,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       outBlocks.push({ rows, height: ex.total, merges: mg });
     });
     dailySheet.lastOffsets = offsetsOf(outBlocks);
-    return assemble(tpl, outBlocks, "J");
+    return assemble(tpl, outBlocks, "J", true);   // a job form is meant to be one page
   }
 
   /* ------------------------------------------------------ plain summary tab */
