@@ -1144,11 +1144,12 @@ input[type=date]{text-align:left;min-width:0}
     </div>
     <div class="pobar"><span class="polab">POs</span><div id="rPos" class="pochips"></div></div>
     <div class="row" style="margin-top:9px">
-      <label class="f" style="flex:1 1 280px">Find words on the forms<input type="text" id="rFind"
-        placeholder="rack, 2in emt, riverside, Ray Tolbert…"></label>
+      <label class="f" style="flex:1 1 280px"><span>Find words on the forms</span><input type="text" id="rFind"
+        placeholder="rack, 2in emt, gutter"></label>
       <button class="b ghost sm" id="rClear" style="align-self:flex-end">Clear</button>
       <span class="mini" id="rFindNote" style="align-self:flex-end;padding-bottom:9px"></span>
     </div>
+    <p class="hint" style="margin:4px 0 0">Put commas between words and each one is counted on its own, with a line per word in the report. No comma means the form has to mention every word.</p>
   </div></div>
   <div id="reportOut"></div>
 </section>
@@ -1178,10 +1179,11 @@ input[type=date]{text-align:left;min-width:0}
       <label class="f" style="flex:1 1 100%"><span>POs</span><div id="xPos" class="pochips"></div></label>
     </div>
     <div class="row" style="margin-top:9px">
-      <label class="f" style="flex:1 1 300px">Only forms with these words<input type="text" id="xFind"
-        placeholder="rack, 2in emt, riverside, Ray Tolbert…"></label>
+      <label class="f" style="flex:1 1 300px"><span>Only forms with these words</span><input type="text" id="xFind"
+        placeholder="rack, 2in emt, gutter"></label>
       <button class="b ghost sm" id="xClear" style="align-self:flex-end">Clear</button>
     </div>
+    <p class="hint" style="margin:4px 0 0">Commas between words. The file holds every form that mentions any of them, and the Totals tab breaks out what each word pulled.</p>
     <div id="xPreview"></div>
     <div class="row" style="margin-top:4px">
       <button class="b red" id="xGo">Weekly time sheets</button>
@@ -4561,20 +4563,33 @@ function formHaystack(r){
   if(f.breakEven) bits.push("broke even break even");
   return bits.filter(Boolean).join(" ").toLowerCase();
 }
-/* Every word has to be in there somewhere. "rack 8069" finds forms that
-   mention both, in any order, in any case. A "quoted phrase" stays together. */
-function searchTerms(q){
-  const out = [], s = String(q||"").toLowerCase();
-  const re = /"([^"]+)"|(\S+)/g;
-  let m;
-  while((m = re.exec(s))) out.push((m[1] || m[2]).trim());
-  return out.filter(Boolean);
+/* Commas separate words that each stand on their own:
+     rack, 2in emt, gutter      pulls every form mentioning ANY of the three
+   Inside one of them every piece has to be there, so 2in emt wants both,
+   and a "quoted phrase" stays together. Case never matters. */
+function searchGroups(q){
+  return String(q||"").split(",").map(chunk=>{
+    const label = chunk.trim();
+    if(!label) return null;
+    const words = [], re = /"([^"]+)"|(\S+)/g;
+    let m;
+    while((m = re.exec(label.toLowerCase()))){
+      const w = (m[1] || m[2]).trim();
+      if(w) words.push(w);
+    }
+    return words.length ? {label, words} : null;
+  }).filter(Boolean);
 }
-function formMatches(r, terms){
-  if(!terms.length) return true;
+/* which of the words caught this form; a form can land under more than one */
+function groupsHit(r, groups){
   const hay = formHaystack(r);
-  return terms.every(t=>hay.includes(t));
+  return groups.filter(g=>g.words.every(w=>hay.includes(w)));
 }
+function formMatches(r, groups){
+  if(!groups.length) return true;
+  return groupsHit(r, groups).length > 0;
+}
+function searchLabel(groups){ return groups.map(g=>'"'+g.label+'"').join(", "); }
 
 function weeksIn(list){ return [...new Set(list.map(r=>r.we))].sort(); }
 
@@ -4713,6 +4728,7 @@ function manPoMatrix(list){
 }
 
 let rPoSel = new Set();
+let rGroups = [];
 function renderReports(){
   const all = collect();
   const weeks = weeksIn(all);
@@ -4749,13 +4765,13 @@ function renderReports(){
   }
   /* keyword search over everything written on the forms */
   {
-    const terms = searchTerms($("rFind").value);
+    rGroups = searchGroups($("rFind").value);
     const before = list.length;
-    if(terms.length){
-      list = list.filter(r=>formMatches(r, terms));
-      title += ' · "'+terms.join('" "')+'"';
+    if(rGroups.length){
+      list = list.filter(r=>formMatches(r, rGroups));
+      title += " · "+searchLabel(rGroups);
     }
-    $("rFindNote").textContent = terms.length
+    $("rFindNote").textContent = rGroups.length
       ? list.length+" of "+before+" job form"+(before===1?"":"s")+" match"
       : "";
   }
@@ -4766,7 +4782,7 @@ function renderReports(){
   let html = '<div class="card"><h2>'+esc(title)+'<span class="tag">'+list.length+' job forms</span></h2><div class="body"><div class="tot">'+totalStrip(grand)+"</div></div></div>";
 
   /* when a search is on, show which forms it caught before anything is printed */
-  if(searchTerms($("rFind").value).length){
+  if(rGroups.length){
     html += '<div class="card"><h2>The forms that matched<span class="tag">Export sends exactly these</span></h2>'+
       '<div class="body"><table class="stack"><thead><tr><th>Date</th><th>PO</th><th>Job</th>'+
       '<th>What was done</th><th class="n">Hours</th><th class="n">Cost</th></tr></thead><tbody>'+
@@ -4780,6 +4796,44 @@ function renderReports(){
             '<td class="n num half" data-l="Hours">'+hrs(r.t.hours)+'</td>'+
             '<td class="n num half r" data-l="Cost">'+money(r.t.shopTotal)+"</td></tr>";
         }).join("")+"</tbody></table></div></div>";
+  }
+
+  /* one line per word when more than one was typed */
+  if(rGroups.length > 1){
+    const per = rGroups.map(g=>({g, rows:[]}));
+    let both = 0;
+    list.forEach(r=>{
+      const hits = groupsHit(r, rGroups);
+      if(hits.length > 1) both++;
+      hits.forEach(g=>{ per[rGroups.indexOf(g)].rows.push(r); });
+    });
+    html += '<div class="card"><h2>By word<span class="tag">'+rGroups.length+' words</span></h2>'+
+      '<div class="body"><div class="tscroll"><table class="stack"><thead><tr><th>Word</th>'+
+      '<th class="n">Job forms</th><th class="n">RT</th><th class="n">OT</th><th class="n">DT</th>'+
+      '<th class="n">Shop hrs</th><th class="n">Shop cost</th><th class="n">Field hrs saved</th>'+
+      '<th class="n">Net saved</th></tr></thead><tbody>';
+    per.forEach(p=>{
+      const t = sumTotals(p.rows.map(r=>r.t));
+      html += '<tr><td data-l="Word">'+esc(p.g.label)+'</td>'+
+        '<td class="n num half" data-l="Job forms">'+p.rows.length+"</td>"+
+        [["RT",t.rt],["OT",t.ot],["DT",t.dt],["Shop hrs",t.hours]]
+          .map(([l,v])=>'<td class="n num half" data-l="'+l+'">'+hrs(v)+"</td>").join("")+
+        '<td class="n num half" data-l="Shop cost">'+money(t.shopTotal)+'</td>'+
+        '<td class="n num half" data-l="Field hrs saved">'+hrs(t.savedHrs)+'</td>'+
+        '<td class="n num" data-l="Net saved">'+money(t.net)+"</td></tr>";
+    });
+    html += '</tbody><tfoot><tr><td data-l="">All of them together</td>'+
+      '<td class="n num half" data-l="Job forms">'+list.length+"</td>"+
+      [["RT",grand.rt],["OT",grand.ot],["DT",grand.dt],["Shop hrs",grand.hours]]
+        .map(([l,v])=>'<td class="n num half" data-l="'+l+'">'+hrs(v)+"</td>").join("")+
+      '<td class="n num half" data-l="Shop cost">'+money(grand.shopTotal)+'</td>'+
+      '<td class="n num half" data-l="Field hrs saved">'+hrs(grand.savedHrs)+'</td>'+
+      '<td class="n num" data-l="Net saved">'+money(grand.net)+"</td></tr></tfoot></table></div>"+
+      '<p class="hint">'+(both
+        ? both+" job form"+(both===1?" mentions":"s mention")+" more than one of these words, so "+
+          (both===1?"it is":"they are")+" counted on each line it belongs to. The bottom line counts every form once, which is why the lines above can add up to more than it."
+        : "No form mentions more than one of these words, so the lines add up to the bottom row.")+
+      "</p></div></div>";
   }
 
   // by PM
@@ -5304,13 +5358,13 @@ function scoped(){
   [...xPoSel].forEach(id=>{ if(!inSpan.some(j=>j.id===id)) xPoSel.delete(id); });
   poChips("xPos", inSpan, xPoSel, preview);
   if(xPoSel.size) recs = recs.filter(r=>xPoSel.has(r.job.id));
-  const terms = searchTerms($("xFind") ? $("xFind").value : "");
-  if(terms.length) recs = recs.filter(r=>formMatches(r, terms));
+  const groups = searchGroups($("xFind") ? $("xFind").value : "");
+  if(groups.length) recs = recs.filter(r=>formMatches(r, groups));
   let label = s.label;
   if(pmId) label += " · "+(pm(pmId)||{}).name;
   if(xPoSel.size) label += " · "+[...xPoSel].map(id=>(job(id)||{}).po).sort().join(", ");
-  if(terms.length) label += ' · "'+terms.join('" "')+'"';
-  return {s, recs, label};
+  if(groups.length) label += " · "+searchLabel(groups);
+  return {s, recs, groups, label};
 }
 function preview(){
   const {s,recs,label} = scoped();
@@ -5335,7 +5389,7 @@ $("xClear").onclick = ()=>{ $("xFind").value = ""; preview(); };
 });
 
 $("xGo").onclick = async ()=>{
-  const {s,recs,label} = scoped(); if(!s) return;
+  const {s,recs,groups,label} = scoped(); if(!s) return;
   $("xOut").innerHTML = '<div class="flag warn">Building…</div>';
   try{
     const sheets = sheetData(recs);
@@ -5403,6 +5457,27 @@ $("xGo").onclick = async ()=>{
       }
     }
 
+    /* when more than one word was searched, what each one pulled on its own */
+    if((groups||[]).length > 1){
+      rows.push([]); rows.push([{v:"By word",bold:true}]);
+      rows.push(["Word","Job forms","Shop hrs","Shop cost","Field hrs saved","Net hrs saved","Field cost avoided","Net saved"].map(h=>({v:h,bold:true})));
+      let both = 0;
+      const per = groups.map(()=>[]);
+      recs.forEach(r=>{
+        const hits = groupsHit(r, groups);
+        if(hits.length > 1) both++;
+        hits.forEach(gg=>per[groups.indexOf(gg)].push(r));
+      });
+      groups.forEach((gg,i)=>{
+        const t = sumTotals(per[i].map(r=>r.t));
+        rows.push([gg.label, per[i].length, t.hours, t.shopTotal, t.savedHrs, t.netHrs, t.fieldValue, t.net]);
+      });
+      rows.push([{v:"ALL OF THEM",bold:true}, recs.length, g.hours, g.shopTotal, g.savedHrs, g.netHrs, g.fieldValue, g.net]);
+      if(both) rows.push([both===1
+        ? "1 job form mentions more than one of these words and is counted on each line it belongs to"
+        : both+" job forms mention more than one of these words and are counted on each line they belong to"]);
+    }
+
     if(months.length>1){
       rows.push([]); rows.push([{v:"By month",bold:true}]);
       rows.push(["Month","","Shop hrs","Shop cost","Field hrs saved","Net hrs saved","Field cost avoided","Net saved"].map(h=>({v:h,bold:true})));
@@ -5422,7 +5497,7 @@ $("xGo").onclick = async ()=>{
 };
 
 $("xGoDaily").onclick = async ()=>{
-  const {s,recs,label} = scoped(); if(!s) return;
+  const {s,recs,groups,label} = scoped(); if(!s) return;
   $("xOut").innerHTML = '<div class="flag warn">Building…</div>';
   try{
     const byDate = {};
