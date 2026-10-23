@@ -393,6 +393,16 @@ input[type=date]{text-align:left;min-width:0}
 }
 
 /* a quantity stepper: thumbs beat a number keyboard on a phone */
+/* tick as many POs as you want; nothing ticked means all of them */
+.pobar{display:flex;gap:10px;align-items:flex-start;margin-top:10px}
+.polab{font-size:12px;color:var(--ink-2);font-weight:600;padding-top:7px;flex:none}
+.pochips{display:flex;flex-wrap:wrap;gap:6px;flex:1}
+.pochips button{border:1px solid var(--line);background:var(--field);color:var(--ink-2);
+  padding:0 11px;height:32px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.pochips button[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
+.pochips button.all{border-style:dashed}
+.pochips .none{font-size:12.5px;color:var(--ink-2);padding-top:7px}
+
 .stp{display:flex;align-items:stretch}
 .stp button{display:none}
 .stp input{flex:1;min-width:0}
@@ -1132,6 +1142,7 @@ input[type=date]{text-align:left;min-width:0}
       <label class="f" id="rMonWrap" hidden>Month<select id="rMonth"></select></label>
       <label class="f" id="rQtrWrap" hidden>Quarter<select id="rQtr"></select></label>
     </div>
+    <div class="pobar"><span class="polab">POs</span><div id="rPos" class="pochips"></div></div>
   </div></div>
   <div id="reportOut"></div>
 </section>
@@ -1158,7 +1169,7 @@ input[type=date]{text-align:left;min-width:0}
     </div>
     <div class="row" style="margin-top:9px">
       <label class="f">Project manager<select id="xPm"></select></label>
-      <label class="f">PO<select id="xPo"></select></label>
+      <label class="f" style="flex:1 1 100%"><span>POs</span><div id="xPos" class="pochips"></div></label>
     </div>
     <div id="xPreview"></div>
     <div class="row" style="margin-top:4px">
@@ -4626,6 +4637,43 @@ function fillSelect(el, opts, keep){
   el.innerHTML = opts.map(o=>'<option value="'+o[0]+'">'+esc(o[1])+"</option>").join("");
   if(keep && opts.some(o=>o[0]===keep)) el.value = keep;
 }
+/* Renders a row of PO chips into `host`. `sel` is a Set of job ids; empty
+   means every PO. Returns nothing: it calls back when the choice changes. */
+function poChips(host, jobsIn, sel, onChange){
+  const el = $(host); if(!el) return;
+  if(!jobsIn.length){ el.innerHTML = '<span class="none">No POs with time in this period.</span>'; return; }
+  el.innerHTML =
+    '<button type="button" class="all" data-po="" aria-pressed="'+(sel.size===0)+'">All POs</button>'+
+    jobsIn.map(j=>'<button type="button" data-po="'+j.id+'" aria-pressed="'+sel.has(j.id)+'">'+
+      esc(j.po)+"</button>").join("");
+  el.querySelectorAll("[data-po]").forEach(b=>b.onclick=()=>{
+    const id = b.dataset.po;
+    if(!id) sel.clear();
+    else { sel.has(id) ? sel.delete(id) : sel.add(id); }
+    onChange();
+  });
+}
+/* hours per man per PO: the breakdown when work is spread over several jobs */
+function manPoMatrix(list){
+  const men = {}, jobsSeen = {};
+  list.forEach(r=>{
+    jobsSeen[r.job.id] = r.job;
+    r.form.crew.forEach(c=>{
+      if(!c.empId) return; const e = emp(c.empId); if(!e) return;
+      const m = men[c.empId] = men[c.empId] || {name:e.name, cls:e.cls, per:{}, hrs:0, cost:0};
+      const hoursHere = (+c.rt||0)+(+c.ot||0)+(+c.dt||0);
+      const rate = +e.rate||0, s = db.settings;
+      m.per[r.job.id] = (m.per[r.job.id]||0) + hoursHere;
+      m.hrs += hoursHere;
+      m.cost += (+c.rt||0)*rate + (+c.ot||0)*rate*s.otMult + (+c.dt||0)*rate*s.dtMult;
+    });
+  });
+  const cols = Object.values(jobsSeen).sort((a,b)=>String(a.po).localeCompare(String(b.po)));
+  const rows = Object.values(men).sort(byClassThenName);
+  return {cols, rows};
+}
+
+let rPoSel = new Set();
 function renderReports(){
   const all = collect();
   const weeks = weeksIn(all);
@@ -4647,6 +4695,19 @@ function renderReports(){
   else if(mode==="week"){ const w=$("rWeek").value; list = all.filter(r=>r.we===w); title="Week ending "+(w?D.us(w):""); }
   else if(mode==="month"){ const m=$("rMonth").value; list = all.filter(r=>D.mon(r.date)===m); title = m?MONTHNAME[+m.slice(5)-1]+" "+m.slice(0,4):""; }
   else { const q=$("rQtr").value; list = all.filter(r=>D.qtr(r.date)===q); title = q?q.replace("-"," "):""; }
+
+  /* which POs had time in this period, and which of them are ticked */
+  const periodJobs = [];
+  { const seen = {};
+    list.forEach(r=>{ if(!seen[r.job.id]){ seen[r.job.id]=1; periodJobs.push(r.job); } });
+    periodJobs.sort((a,b)=>String(a.po).localeCompare(String(b.po)));
+    [...rPoSel].forEach(id=>{ if(!periodJobs.some(j=>j.id===id)) rPoSel.delete(id); });
+  }
+  poChips("rPos", periodJobs, rPoSel, renderReports);
+  if(rPoSel.size){
+    list = list.filter(r=>rPoSel.has(r.job.id));
+    title += " · "+rPoSel.size+" PO"+(rPoSel.size===1?"":"s");
+  }
 
   if(!list.length){ $("reportOut").innerHTML='<div class="card"><div class="empty">Nothing entered for '+esc(title)+" yet.</div></div>"; return; }
 
@@ -4724,6 +4785,31 @@ function renderReports(){
   html += '</tbody><tfoot><tr><td>Total</td><td></td>'+
     [mTot.rt,mTot.ot,mTot.dt,mTot.rt+mTot.ot+mTot.dt].map(v=>'<td class="n num">'+hrs(v)+"</td>").join("")+
     '<td class="n num">'+money(mTot.cost)+"</td></tr></tfoot></table></div></div>";
+
+  /* who put how many hours on which PO, when the work is spread over several */
+  {
+    const mx = manPoMatrix(list);
+    if(mx.cols.length > 1){
+      const colTot = {}, names = {};
+      mx.cols.forEach(j=>{ colTot[j.id]=0; names[j.id]=j.po; });
+      mx.rows.forEach(m=>mx.cols.forEach(j=>{ colTot[j.id] += (m.per[j.id]||0); }));
+      html += '<div class="card"><h2>Hours across POs<span class="tag">'+mx.cols.length+' POs in this period</span></h2>'+
+        '<div class="body"><div class="tscroll"><table><thead><tr><th>Employee</th><th>Class</th>'+
+        mx.cols.map(j=>'<th class="n">'+esc(j.po)+"</th>").join("")+
+        '<th class="n">Hours</th><th class="n">Cost</th></tr></thead><tbody>';
+      mx.rows.forEach(m=>{
+        html += "<tr><td>"+esc(m.name)+"</td><td>"+esc(classLabel(m.cls))+"</td>"+
+          mx.cols.map(j=>{ const v = m.per[j.id]||0;
+            return '<td class="n num"'+(v?"":' style="color:#b9c1c7"')+">"+(v?hrs(v):"")+"</td>"; }).join("")+
+          '<td class="n num"><strong>'+hrs(m.hrs)+'</strong></td><td class="n num">'+money(m.cost)+"</td></tr>";
+      });
+      html += '</tbody><tfoot><tr><td>Total</td><td></td>'+
+        mx.cols.map(j=>'<td class="n num">'+hrs(colTot[j.id])+"</td>").join("")+
+        '<td class="n num">'+hrs(mx.rows.reduce((a,m)=>a+m.hrs,0))+
+        '</td><td class="n num">'+money(mx.rows.reduce((a,m)=>a+m.cost,0))+"</td></tr></tfoot></table></div>"+
+        '<p class="hint">A blank cell means that man put no time on that PO. Tick POs above to narrow it down.</p></div></div>';
+    }
+  }
 
   const sav = {}; let extra = 0;
   list.forEach(r=>{
@@ -5097,7 +5183,7 @@ function fillScopeOptions(){
   fillSelect($("xMonth"), months.length?months.map(m=>[m,MONTHNAME[+m.slice(5)-1]+" "+m.slice(0,4)]).reverse():[["","No time entered"]], $("xMonth").value);
   fillSelect($("xQtr"), qs.length?qs.map(q=>[q,q.replace("-"," ")]).reverse():[["","No time entered"]], $("xQtr").value);
   fillSelect($("xPm"), [["","All project managers"]].concat(db.pms.map(p=>[p.id,p.name])), $("xPm").value);
-  fillSelect($("xPo"), [["","All POs"]].concat(db.jobs.map(j=>[j.id,j.po+" · "+j.name])), $("xPo").value);
+
   const worked = Object.keys(db.days).filter(d=>dayRec(d).forms.length).sort();
   if(!$("xDay").value)  $("xDay").value  = worked.length?worked[worked.length-1]:D.iso(new Date());
   if(!$("xFrom").value) $("xFrom").value = worked.length?worked[0]:D.iso(new Date());
@@ -5132,15 +5218,22 @@ function scope(){
   const lo = f<t?f:t, hi = f<t?t:f;
   return {from:lo, to:hi, label:D.us(lo)+" to "+D.us(hi)};
 }
+let xPoSel = new Set();
 function scoped(){
   const s = scope(); if(!s) return {s:null, recs:[]};
-  const pmId=$("xPm").value, poId=$("xPo").value;
+  const pmId = $("xPm").value;
   let recs = collect(d => d>=s.from && d<=s.to);
   if(pmId) recs = recs.filter(r=>r.pm.id===pmId);
-  if(poId) recs = recs.filter(r=>r.job.id===poId);
+  /* chips for whatever POs have time in this span, then filter to the ticked */
+  const seen = {}, inSpan = [];
+  recs.forEach(r=>{ if(!seen[r.job.id]){ seen[r.job.id]=1; inSpan.push(r.job); } });
+  inSpan.sort((a,b)=>String(a.po).localeCompare(String(b.po)));
+  [...xPoSel].forEach(id=>{ if(!inSpan.some(j=>j.id===id)) xPoSel.delete(id); });
+  poChips("xPos", inSpan, xPoSel, preview);
+  if(xPoSel.size) recs = recs.filter(r=>xPoSel.has(r.job.id));
   let label = s.label;
   if(pmId) label += " · "+(pm(pmId)||{}).name;
-  if(poId) label += " · "+(job(poId)||{}).po;
+  if(xPoSel.size) label += " · "+[...xPoSel].map(id=>(job(id)||{}).po).sort().join(", ");
   return {s, recs, label};
 }
 function preview(){
@@ -5158,7 +5251,7 @@ function preview(){
       ", "+formsOut+" job form"+(formsOut===1?"":"s")+".</div>"
     : '<div class="flag">Nothing entered for '+esc(label)+".</div>";
 }
-["xScope","xDay","xWeek","xMonth","xQtr","xFrom","xTo","xPm","xPo"].forEach(id=>{
+["xScope","xDay","xWeek","xMonth","xQtr","xFrom","xTo","xPm"].forEach(id=>{
   $(id).onchange = ()=> (id==="xScope" ? showScope() : preview());
 });
 
@@ -5214,6 +5307,22 @@ $("xGo").onclick = async ()=>{
       rows.push([k, b.men, b.rt, b.ot, b.dt, b.rt+b.ot+b.dt, b.cost]);
     });
     rows.push([{v:"TOTAL",bold:true},crewRows.length,mt.rt,mt.ot,mt.dt,mt.rt+mt.ot+mt.dt,mt.cost]);
+
+    /* and, when the span covers more than one PO, who put hours on which */
+    {
+      const mx = manPoMatrix(recs);
+      if(mx.cols.length > 1){
+        rows.push([]); rows.push([{v:"Hours across POs",bold:true}]);
+        rows.push(["Employee","Class"].concat(mx.cols.map(j=>j.po)).concat(["Total hrs"]).map(h=>({v:h,bold:true})));
+        const colTot = {}; mx.cols.forEach(j=>colTot[j.id]=0);
+        mx.rows.forEach(m=>{
+          mx.cols.forEach(j=>{ colTot[j.id] += (m.per[j.id]||0); });
+          rows.push([m.name, classLabel(m.cls)].concat(mx.cols.map(j=>m.per[j.id]||"")).concat([m.hrs]));
+        });
+        rows.push([{v:"TOTAL",bold:true},""].concat(mx.cols.map(j=>colTot[j.id]))
+                  .concat([mx.rows.reduce((a,m)=>a+m.hrs,0)]));
+      }
+    }
 
     if(months.length>1){
       rows.push([]); rows.push([{v:"By month",bold:true}]);
