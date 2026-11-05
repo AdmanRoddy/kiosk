@@ -1174,13 +1174,13 @@ input[type=date]{text-align:left;min-width:0}
         <option value="prefab">Prefab orders</option>
         <option value="wire">Wire room</option>
         <option value="temp">Temp panel</option></select></label>
-      <label class="f">Status<select id="ordStat">
-        <option value="open">Still open</option>
-        <option value="pending">Waiting on Isaac</option>
-        <option value="new">Sent to the shop</option>
-        <option value="working">In the shop</option>
-        <option value="done">Done</option>
-        <option value="">All</option></select></label>
+      <label class="f" style="flex:1 1 100%"><span>Show</span>
+        <div class="pochips" id="ordTabs">
+          <button type="button" data-ot="pending" aria-pressed="true">Waiting on Isaac</button>
+          <button type="button" data-ot="floor" aria-pressed="false">On the floor</button>
+          <button type="button" data-ot="done" aria-pressed="false">Done</button>
+          <button type="button" data-ot="" aria-pressed="false">Everything</button>
+        </div></label>
       <label class="f">Find<input type="text" id="ordFind" placeholder="work no, job, name" style="width:170px"></label>
     </div>
     <div id="ordList" style="margin-top:11px"></div>
@@ -6357,7 +6357,9 @@ function drawShop(){
         (s.doneAt?"<div><strong>Finished "+esc(shopWhen(s.doneAt))+(s.doneBy?" by "+esc(s.doneBy):"")+"</strong></div>":"")+
       "</div>" : "")+
       (st==="new" ? '<button class="b big" data-s="start">Start it</button>' : "")+
-      (st!=="done" ? '<button class="b red big" data-s="finish">Mark it finished</button>' : '<button class="b ghost big" data-s="reopen">Put it back in the shop</button>')+
+      (st!=="done" ? '<button class="b red big" data-s="finish">Mark it finished</button>'+
+                     '<button class="b ghost big" data-s="clear">Take it off the board</button>'
+                   : '<button class="b ghost big" data-s="reopen">Put it back in the shop</button>')+
       '<button class="b ghost big" data-s="pdf">Open the sheet</button>'+
       '<button class="b ghost big" data-s="back">Back to the list</button></div>';
     return wireShop();
@@ -6543,8 +6545,22 @@ function wireShop(){
         K.sScreen = "list"; K.sOrd = null; K.sMsg = "";
         return drawShop();
       }
+      if(a==="clear"){
+        /* gone from the floor, kept for the office: it lands on Isaac's Done tab
+           marked as taken off rather than built */
+        if(!confirm("Take "+(o.no||"this order")+" off the board? Isaac still keeps it under Done.")) return;
+        o.status = "done";
+        s.cleared = true;
+        s.doneAt = new Date().toISOString();
+        s.doneBy = shopWho() || s.claimedBy || "shop";
+        s.notes = s.notes || [];
+        s.notes.push({at:s.doneAt, who:s.doneBy, text:"Taken off the board"});
+        save(); ordBadge(); shopBadge();
+        K.sScreen = "list"; K.sOrd = null; K.sMsg = "";
+        return drawShop();
+      }
       if(a==="reopen"){
-        o.status = "working"; s.doneAt = ""; s.doneBy = "";
+        o.status = "working"; s.doneAt = ""; s.doneBy = ""; s.cleared = false;
         save(); ordBadge(); shopBadge();
         K.sMsg = "Back in the shop.";
         return drawShop();
@@ -7191,18 +7207,32 @@ function ordBadge(){
 let ordShown = null;
 function renderOrders(){
   db.orders = db.orders || [];
-  const kind = $("ordKind").value, st = $("ordStat").value, q = $("ordFind").value.trim().toLowerCase();
-  const all = db.orders.slice().sort((a,b)=>String(b.at||"").localeCompare(String(a.at||"")));
+  const kind = $("ordKind").value, st = ordTab, q = $("ordFind").value.trim().toLowerCase();
+  const n = {pending:0, floor:0, done:0};
+  db.orders.forEach(o=>{ const s=o.status||"new"; if(s==="pending") n.pending++; else if(s==="done") n.done++; else n.floor++; });
+  document.querySelectorAll("#ordTabs [data-ot]").forEach(b=>{
+    b.setAttribute("aria-pressed", b.dataset.ot===ordTab ? "true" : "false");
+    const k = b.dataset.ot; const base = {pending:"Waiting on Isaac", floor:"On the floor", done:"Done", "":"Everything"}[k];
+    b.textContent = base + (k && n[k] ? " · "+n[k] : "");
+  });
+  /* done ones read best most recently finished first; the rest, oldest first so nothing sits */
+  const when = o => st==="done" ? ((o.shop||{}).doneAt || o.at || "") : (o.at || "");
+  const all = db.orders.slice().sort((a,b)=> st==="done"
+    ? String(when(b)).localeCompare(String(when(a)))
+    : String(b.at||"").localeCompare(String(a.at||"")));
   const list = all.filter(o=>{
     if(kind && o.kind!==kind) return false;
-    if(st==="open" ? o.status==="done" : (st && o.status!==st)) return false;
+    const s = o.status||"new";
+    if(st==="pending" && s!=="pending") return false;
+    if(st==="floor"   && !(s==="new" || s==="working")) return false;
+    if(st==="done"    && s!=="done") return false;
     if(q && !((o.no||"")+" "+(o.job||"")+" "+(o.po||"")+" "+(o.by||"")).toLowerCase().includes(q)) return false;
     return true;
   });
   $("ordTag").textContent = ordWaiting() ? ordWaiting()+" waiting on you" : ordOpen() ? ordOpen()+" on the floor" : (all.length ? "all caught up" : "nothing yet");
   ordBadge();
   $("ordList").innerHTML = !list.length
-    ? '<div class="empty">'+(all.length?"Nothing matches those filters.":"No orders have come in from the field yet.")+'</div>'
+    ? '<div class="empty">'+(st==="pending" ? "Nothing waiting on you." : st==="floor" ? "Nothing on the floor." : st==="done" ? "Nothing finished yet." : all.length ? "Nothing matches." : "No orders have come in yet.")+'</div>'
     : '<table class="stack"><thead><tr><th style="width:92px">Work no.</th><th style="width:92px">Came in</th><th style="width:108px">Form</th>'+
       '<th>Job</th><th style="width:130px">From</th><th style="width:88px">Priority</th><th style="width:128px">Status</th><th style="width:110px"></th></tr></thead><tbody>'+
       list.map(o=>{
@@ -7217,7 +7247,7 @@ function renderOrders(){
               ? "Built: "+sh.built.map(b=>esc((b.qty?b.qty+" ":"")+b.what)).join(", ")+"<br>"
               : "")+
             (sh.notes||[]).map(n=>esc(n.who||"shop")+": "+esc(n.text)+"<br>").join("")+
-            (sh.doneAt ? "<strong>Finished "+esc(shopWhen(sh.doneAt))+(sh.doneBy?" by "+esc(sh.doneBy):"")+"</strong>" : "")+
+            (sh.doneAt ? "<strong>"+(sh.cleared ? "Taken off the board " : "Finished ")+esc(shopWhen(sh.doneAt))+(sh.doneBy?" by "+esc(sh.doneBy):"")+"</strong>" : "")+
             "</div>"
           : "";
         const det = ordShown===o.id
@@ -7226,14 +7256,16 @@ function renderOrders(){
             '<a class="b sm" style="text-decoration:none;display:inline-flex;align-items:center" href="'+ordMail(o)+'">Reply to '+esc(o.by||"them")+'</a>'+
             '<button class="b ghost sm" data-ocopy="'+o.id+'">Copy the text</button>'+
             '<span class="spacer"></span>'+
-            '<button class="b ghost sm" data-odel="'+o.id+'">Delete this order</button></div></td></tr>'
+            '<button class="b ghost sm" data-odel="'+o.id+'">Delete for good</button></div></td></tr>'
           : "";
         return '<tr><td class="o-no"><strong>'+esc(o.no||"")+'</strong></td>'+
           '<td class="num half" data-l="Came in">'+(o.at?D.us(o.at.slice(0,10)):"")+'</td>'+
           '<td class="half r" data-l="Form">'+esc(ORD_NAME[o.kind]||o.kind||"")+'</td>'+
           '<td data-l="Job">'+esc(o.job||"")+(o.po?' <span class="mini">'+esc(o.po)+'</span>':"")+'</td>'+
           '<td class="half" data-l="From">'+esc(o.by||"")+(o.src==="office"?' <span class="mini">(office)</span>':"")+'</td>'+
-          '<td class="half r" data-l="Priority"'+pr+'>'+esc(o.priority||"Standard")+'</td>'+
+          '<td class="half r" data-l="Priority"'+pr+'>'+esc(o.priority||"Standard")+
+            ((o.status==="done" && o.shop) ? '<br><span class="mini">'+((o.shop.cleared ? "taken off the board" : "finished")+
+              (o.shop.doneBy ? " by "+esc(o.shop.doneBy) : "")+(o.shop.doneAt ? " "+esc(D.us(String(o.shop.doneAt).slice(0,10))) : ""))+"</span>" : "")+'</td>'+
           '<td data-l="Status"><select data-ost="'+o.id+'">'+Object.keys(ORD_STAT).map(k=>
             '<option value="'+k+'"'+(k===(o.status||"new")?" selected":"")+">"+ORD_STAT[k]+"</option>").join("")+"</select></td>"+
           '<td class="o-act">'+((o.status||"new")==="pending" ? '<button class="b sm" data-osend="'+o.id+'">Send to the shop</button> ' : "")+
@@ -7277,7 +7309,9 @@ function ordMail(o){
     "?subject="+encodeURIComponent("Re: "+(o.no||"")+" · "+(o.job||""))+
     "&body="+encodeURIComponent("\n\n--- your request ---\n"+(o.summary||"").slice(0,1200));
 }
-["ordKind","ordStat"].forEach(id=>{ const el=$(id); if(el) el.onchange = renderOrders; });
+let ordTab = "pending";
+["ordKind"].forEach(id=>{ const el=$(id); if(el) el.onchange = renderOrders; });
+document.querySelectorAll("#ordTabs [data-ot]").forEach(b=>b.onclick=()=>{ ordTab = b.dataset.ot; ordShown = null; renderOrders(); });
 if($("ordFind")) $("ordFind").oninput = renderOrders;
 
 /* ================================================================ FIELD ORDER SITE
