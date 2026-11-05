@@ -155,8 +155,51 @@ tfoot td{background:#eef1f3;font-weight:700}
 .k-top{background:var(--paper);border-bottom:3px solid var(--red);padding:10px 16px;display:flex;align-items:center;gap:14px}
 .k-top .logo{height:42px}
 .k-top .who{margin-left:auto;font-size:14px;color:var(--ink-2)}
-.k-wrap{flex:1;display:flex;align-items:flex-start;justify-content:center;padding:22px 16px 40px}
+.k-wrap{flex:1;display:flex;flex-direction:column;align-items:center;padding:22px 16px 40px}
 .k-card{background:var(--paper);border:1px solid var(--line);width:100%;max-width:680px}
+.k-card h3 .tag{float:right;font-size:13px;font-weight:600;opacity:.82;
+  background:none;border:0;padding:0;color:inherit}
+.offbar{background:#fff6e0;border-bottom:1px solid #e3c98a;padding:10px 16px;display:flex;
+  align-items:center;gap:12px;flex-wrap:wrap;font-size:14px}
+.offbar span{flex:1 1 260px}
+#pdfPane{position:fixed;inset:0;z-index:60;background:#2b2f33;display:flex;flex-direction:column}
+#pdfPane[hidden]{display:none}
+#pdfPane .pv-top{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--paper);
+  border-bottom:3px solid var(--red)}
+#pdfPane .pv-top b{font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pdfPane iframe{flex:1;border:0;width:100%;background:#fff}
+body.pv-open{overflow:hidden}
+.k-tabs{width:100%;max-width:680px;display:flex}
+.k-tabs button{flex:1;background:var(--shell);border:1px solid var(--line);border-bottom:0;
+  padding:15px 10px;font-size:16px;font-weight:700;color:var(--ink-2);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:8px}
+.k-tabs button+button{border-left:0}
+.k-tabs button[aria-pressed="true"]{background:var(--paper);color:var(--ink);
+  box-shadow:inset 0 3px 0 var(--red)}
+.kbadge:empty{display:none}
+.kbadge{background:var(--red);color:#fff;border-radius:11px;min-width:22px;padding:1px 7px;
+  font-size:13px;font-weight:700;line-height:20px}
+/* the work queue out in the shop */
+.q-list{display:flex;flex-direction:column;gap:9px}
+.qrow{display:block;width:100%;text-align:left;background:var(--paper);
+  border:1px solid var(--line);border-left:5px solid var(--line);padding:14px 16px;cursor:pointer}
+.qrow.rush{border-left-color:var(--warn)}
+.qrow.emer{border-left-color:var(--red)}
+.qrow.mine{background:#f3f7f4}
+.qrow b{font-size:18px;display:block}
+.qrow small{display:block;color:var(--ink-2);font-size:14px;margin-top:3px}
+.qrow .qtags{margin-top:7px;display:flex;flex-wrap:wrap;gap:6px}
+.qtag{font-size:12px;font-weight:700;padding:2px 8px;border:1px solid var(--line);
+  background:var(--field);color:var(--ink-2)}
+.qtag.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.qtag.hot{background:var(--red);border-color:var(--red);color:#fff}
+.q-ord{white-space:pre-wrap;font-size:14px;line-height:1.5;background:var(--field);
+  border:1px solid var(--line-2);padding:12px;max-height:40vh;overflow:auto}
+.q-log{border:1px solid var(--line);padding:12px;margin-top:12px;background:var(--field)}
+.q-log table{width:100%}
+.q-log input{width:100%}
+.q-trail{font-size:14px;color:var(--ink-2);margin-top:10px}
+.q-trail div{padding:3px 0;border-top:1px solid var(--line-2)}
 @media (min-width:700px){
   .keys button{font-size:32px;padding:26px 0}
   .pinbox{font-size:42px;min-height:76px}
@@ -931,7 +974,13 @@ input[type=date]{text-align:left;min-width:0}
     <button class="b ghost sm" id="kBack">Order forms</button>
     <button class="b ghost sm" id="kOffice">Office</button>
   </div>
-  <div class="k-wrap"><div class="k-card" id="kCard"></div></div>
+  <div class="k-wrap">
+    <div class="k-tabs" id="kTabs">
+      <button type="button" data-kt="clock" aria-pressed="true">Time clock</button>
+      <button type="button" data-kt="shop">Shop orders <span class="kbadge" id="kShopBadge"></span></button>
+    </div>
+    <div class="k-card" id="kCard"></div>
+  </div>
 </div>
 
 <div id="office" hidden>
@@ -1114,7 +1163,12 @@ input[type=date]{text-align:left;min-width:0}
 </section>
 <!-- ======================= ORDERS ======================= -->
 <section id="v-orders" hidden>
-  <div class="card"><h2>Orders from the field<span class="tag" id="ordTag"></span></h2><div class="body">
+  <div class="card"><h2>Orders<span class="tag" id="ordTag"></span></h2><div class="body">
+    <div class="row" style="margin-bottom:10px">
+      <button class="b" id="ordNewPf">New prefab / conduit order</button>
+      <button class="b" id="ordNewWr">New wire room order</button>
+      <span class="mini" style="align-self:center">Written up here, it lands on the shop queue the same as one from the field.</span>
+    </div>
     <div class="row">
       <label class="f">Form<select id="ordKind">
         <option value="">All forms</option>
@@ -1292,8 +1346,13 @@ input[type=date]{text-align:left;min-width:0}
     <button data-fv="prefab" aria-current="true">Prefab order</button>
     <button data-fv="wire">Wire room</button>
     <button data-fv="temp">Temp panel request</button>
-    <button data-fv="clock">Time clock</button>
+    <button data-fv="clock" id="fClockTab">Time clock</button>
   </div></nav>
+
+  <div id="fromOffice" class="offbar" hidden>
+    <span><b>Writing this up from the office.</b> It goes straight onto the shop queue, no email needed.</span>
+    <button class="b sm" id="fromOfficeBack">Back to the office</button>
+  </div>
 
   <main id="fmain">
 
@@ -1985,13 +2044,14 @@ function initWire(){
   /* per-conductor length (a home run can drop off the spool early) */
   function pullSets(p){ return Math.max(1, parseInt(p.sets) || 1); }
   function pullTotal(p){ const m = wasteMult(); return conductorsOf(p).list.reduce((a,c) => a + c.len, 0) * m * pullSets(p); }
-  /* How the man at the spool works it: start on the longest home run, and after
-     each cut he only pulls the difference down to the next one. Three home runs
-     at 100', 95' and 80' read
-       "Sever on HR-3, pull 5', sever on HR-2, pull 15', sever on HR-1, pull the
-        remaining footage"
-     because 100 to 95 is the 5 and 95 to 80 is the 15. Home runs that share a
-     length are severed together on the same call. */
+  /* How the man at the spool works it: sever the longest home run, zero the
+     counter, and keep pulling. The counter never resets after that, so every
+     call is a reading on the wheel, not a step. Three home runs at 100', 95'
+     and 80' read
+       "Sever on HR-3, pull to 5', sever on HR-2, pull to 20', sever on HR-1,
+        pull the remaining footage"
+     because 95 sits 5 short of the longest and 80 sits 20 short of it. Home
+     runs that share a length are severed together on the same call. */
   function spoolPlan(p){
     const C = conductorsOf(p);
     if(!C.varied) return '';
@@ -2003,7 +2063,7 @@ function initWire(){
     ls.forEach((len, i) => {
       parts.push(`sever on ${byLen[len].join(' & ')}`);
       const next = ls[i + 1];
-      parts.push(next == null ? 'pull the remaining footage' : `pull ${fmt(len - next)}'`);
+      parts.push(next == null ? 'pull the remaining footage' : `pull to ${fmt(ls[0] - next)}'`);
     });
     const t = parts.join(', ');
     return t.charAt(0).toUpperCase() + t.slice(1);
@@ -6029,9 +6089,14 @@ setInterval(()=>{
   if(!SB.local && (Date.now() % 20000) > 7000) return;      // Supabase: every ~20s; shop server: every 7s
   if(DIRTY.days.size || DIRTY.tables.size){ sbQueue(); return; }
   sbPull().then(()=>{
-    if(db.kiosk){ drawK(); return; }
+    if(db.kiosk){
+      /* a man part way through logging what he built keeps his boxes */
+      if(K.tab === "shop" && K.sScreen === "one"){ shopBadge(); return; }
+      drawK(); return;
+    }
     if(editing()) return;
     const vis = id => { const el=$(id); return el && !el.hidden; };
+    if(vis("v-orders"))  renderOrders();
     if(vis("v-daily"))   renderDaily();
     if(vis("v-clock"))   renderClock();
     if(vis("v-timeoff")) renderTimeoff();
@@ -6183,13 +6248,22 @@ async function renderDevices(){
 }
 
 /* ================================================================ KIOSK */
-let K = {screen:"pin", pin:"", empId:null, msg:"", calMon:null, selA:null, selB:null, kind:"Vacation", note:""};
+let K = {screen:"pin", pin:"", empId:null, msg:"", calMon:null, selA:null, selB:null, kind:"Vacation", note:"",
+         tab:"clock", sScreen:"list", sOrd:null, sWho:"", sMsg:""};
 let kTimer = null;
 
 /* kiosk(on) and setMode() live with the field site, at the end of this file */
 function kIdle(){
   clearTimeout(kTimer);
-  kTimer = setTimeout(()=>{ if(db.kiosk && K.screen!=="pin"){ K={screen:"pin",pin:"",empId:null,msg:""}; drawK(); } }, 45000);
+  kTimer = setTimeout(()=>{
+    /* the clock screen holds a man's name, so it clears itself. The work queue
+       is just the shop's own orders, and a man walking back from the bender
+       should find it where he left it. */
+    if(db.kiosk && K.tab === "clock" && K.screen!=="pin"){
+      K = Object.assign(K, {screen:"pin", pin:"", empId:null, msg:""});
+      drawK();
+    }
+  }, 45000);
 }
 const byPin = pin => db.employees.find(e=>e.active!==false && pin.length>0 &&
                         (String(e.pin||"")===pin || String(e.badge||"")===pin));
@@ -6234,11 +6308,96 @@ function keypad(){
     [1,2,3,4,5,6,7,8,9].map(n=>'<button data-k="'+n+'">'+n+"</button>").join("")+
     '<button data-k="clr">Clear</button><button data-k="0">0</button><button data-k="go">Enter</button></div>';
 }
+/* ---------------------------------------------- the shop floor's work queue */
+function shopOf(o){ return (o.shop = o.shop || {built:[], notes:[]}); }
+function shopWho(){
+  const e = K.empId ? emp(K.empId) : null;
+  return (K.sWho || (e ? e.name : "")).trim();
+}
+/* oldest first so nothing sits, but a rush jumps the line */
+function shopQueue(){
+  const rank = p => p==="Emergency" ? 0 : p==="Rush" ? 1 : 2;
+  return (db.orders||[]).filter(o=>o.status!=="done")
+    .slice().sort((a,b)=>
+      (rank(a.priority)-rank(b.priority)) || String(a.at||"").localeCompare(String(b.at||"")));
+}
+function shopBadge(){
+  const el = $("kShopBadge"); if(!el) return;
+  const n = shopQueue().filter(o=>(o.status||"new")==="new").length;
+  el.textContent = n ? String(n) : "";
+}
+function drawShop(){
+  const c = $("kCard");
+  if(K.sScreen === "one"){
+    const o = (db.orders||[]).find(x=>x.id===K.sOrd);
+    if(!o){ K.sScreen="list"; return drawShop(); }
+    const s = shopOf(o), st = o.status||"new";
+    const lines = (s.built||[]).concat([{qty:"",what:""}]);
+    c.innerHTML = '<h3>'+esc(o.no||"Order")+'<span class="qtag '+(o.priority==="Emergency"?"hot":"")+'" style="float:right">'+
+        esc(o.priority||"Standard")+'</span></h3><div class="k-body">'+
+      '<p class="k-msg" style="text-align:left">'+esc(ORD_NAME[o.kind]||o.kind||"")+
+        (o.job?" · "+esc(o.job):"")+(o.po?" · "+esc(o.po):"")+
+        (o.by?"<br><span class=\"mini\">From "+esc(o.by)+(o.need?", needs it "+D.us(o.need):"")+"</span>":"")+"</p>"+
+      (K.sMsg?'<div class="flag good">'+esc(K.sMsg)+"</div>":"")+
+      '<div class="q-ord">'+esc(o.summary||"(nothing written on this one)")+"</div>"+
+      '<div class="q-log">'+
+        '<label class="f"><span>Who is on it</span><input type="text" data-s="who" value="'+esc(shopWho())+'" placeholder="Your name"></label>'+
+        '<p class="mini" style="margin:10px 0 4px"><strong>What we actually built</strong></p>'+
+        '<table><thead><tr><th style="width:86px">How many</th><th>What</th><th style="width:44px"></th></tr></thead><tbody>'+
+        lines.map((b,i)=>'<tr><td><input type="number" inputmode="decimal" min="0" data-s="bq" data-i="'+i+'" value="'+esc(b.qty)+'"></td>'+
+          '<td><input type="text" data-s="bw" data-i="'+i+'" value="'+esc(b.what)+'" placeholder="3/4 90s, MC whips…"></td>'+
+          '<td>'+(i < (s.built||[]).length ? '<button class="x" data-s="bx" data-i="'+i+'">&times;</button>' : "")+"</td></tr>").join("")+
+        "</tbody></table>"+
+        '<label class="f" style="margin-top:9px"><span>Note back to the foreman</span><input type="text" data-s="note" placeholder="Short 4, rest ready Thursday"></label>'+
+        '<button class="b ghost sm" data-s="savenote" style="margin-top:8px">Save what is typed</button>'+
+      "</div>"+
+      ((s.notes||[]).length || s.claimedBy || s.doneAt ? '<div class="q-trail">'+
+        (s.claimedBy?"<div>"+esc(s.claimedBy)+" started it "+esc(shopWhen(s.startedAt))+"</div>":"")+
+        (s.notes||[]).map(n=>"<div>"+esc(n.who||"shop")+": "+esc(n.text)+' <span class="mini">'+esc(shopWhen(n.at))+"</span></div>").join("")+
+        (s.doneAt?"<div><strong>Finished "+esc(shopWhen(s.doneAt))+(s.doneBy?" by "+esc(s.doneBy):"")+"</strong></div>":"")+
+      "</div>" : "")+
+      (st==="new" ? '<button class="b big" data-s="start">Start it</button>' : "")+
+      (st!=="done" ? '<button class="b red big" data-s="finish">Mark it finished</button>' : '<button class="b ghost big" data-s="reopen">Put it back in the shop</button>')+
+      '<button class="b ghost big" data-s="pdf">Open the sheet</button>'+
+      '<button class="b ghost big" data-s="back">Back to the list</button></div>';
+    return wireShop();
+  }
+  const q = shopQueue();
+  c.innerHTML = '<h3>Shop orders<span class="tag">'+(q.length?q.length+" open":"all caught up")+"</span></h3>"+
+    '<div class="k-body">'+
+    (!q.length ? '<div class="empty">Nothing waiting. Anything the field sends lands here.</div>'
+      : '<div class="q-list">'+q.map(o=>{
+          const s = o.shop||{}, st = o.status||"new";
+          const cls = o.priority==="Emergency" ? " emer" : o.priority==="Rush" ? " rush" : "";
+          return '<button type="button" class="qrow'+cls+(s.claimedBy?" mine":"")+'" data-o="'+o.id+'">'+
+            "<b>"+esc(o.no||"")+" · "+esc(ORD_NAME[o.kind]||o.kind||"")+"</b>"+
+            "<small>"+esc(o.job||"(no job)")+(o.po?" · "+esc(o.po):"")+(o.by?" · "+esc(o.by):"")+"</small>"+
+            '<div class="qtags">'+
+              '<span class="qtag'+(st==="working"?" on":"")+'">'+esc(ORD_STAT[st]||st)+"</span>"+
+              (o.priority && o.priority!=="Standard" ? '<span class="qtag hot">'+esc(o.priority)+"</span>" : "")+
+              (o.src==="office" ? '<span class="qtag">from the office</span>' : "")+
+              (s.claimedBy ? '<span class="qtag">'+esc(s.claimedBy)+"</span>" : "")+
+              (o.at ? '<span class="qtag">in '+esc(D.us(o.at.slice(0,10)))+"</span>" : "")+
+            "</div></button>";
+        }).join("")+"</div>")+
+    "</div>";
+  wireShop();
+}
+function shopWhen(iso){
+  if(!iso) return "";
+  const d = String(iso).slice(0,10);
+  return D.us(d) + (String(iso).length > 11 ? " " + T.clock(iso) : "");
+}
+
 function drawK(){
   const c = $("kCard");
   const e = K.empId ? emp(K.empId) : null;
   $("kWho").textContent = e ? e.name : "";
   kIdle();
+  document.querySelectorAll("#kTabs [data-kt]").forEach(b=>
+    b.setAttribute("aria-pressed", b.dataset.kt === K.tab ? "true" : "false"));
+  shopBadge();
+  if(K.tab === "shop") return drawShop();
 
   if(K.screen==="pin"){
     const anyBadge = db.employees.some(e=>e.badge);
@@ -6326,6 +6485,81 @@ function calHTML(mon){
     '<table class="cal"><thead><tr>'+["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(x=>"<th>"+x+"</th>").join("")+
     "</tr></thead><tbody>"+cells+"</tbody></table>";
 }
+/* Everything the shop does is written onto the order itself, so it rides the
+   same sync as the order and shows up in the office without a second table. */
+function wireShop(){
+  const card = $("kCard");
+  const ord = ()=> (db.orders||[]).find(x=>x.id===K.sOrd);
+  const touch = () => {};   // save() spots the change itself and queues the push
+  /* pull whatever is typed into the boxes right now onto the record */
+  const harvest = ()=>{
+    const o = ord(); if(!o) return null;
+    const s = shopOf(o);
+    const built = [];
+    card.querySelectorAll('[data-s="bw"]').forEach(el=>{
+      const i = +el.dataset.i;
+      const q = card.querySelector('[data-s="bq"][data-i="'+i+'"]');
+      const what = el.value.trim(), qty = q ? q.value.trim() : "";
+      if(what || qty) built.push({qty, what});
+    });
+    s.built = built;
+    const w = card.querySelector('[data-s="who"]');
+    if(w){ K.sWho = w.value.trim(); }
+    const n = card.querySelector('[data-s="note"]');
+    if(n && n.value.trim()){
+      s.notes = s.notes || [];
+      s.notes.push({at:new Date().toISOString(), who:shopWho()||"shop", text:n.value.trim()});
+      n.value = "";
+    }
+    save();
+    return o;
+  };
+  card.querySelectorAll("[data-o]").forEach(el=>el.onclick=()=>{
+    K.sOrd = el.dataset.o; K.sScreen = "one"; K.sMsg = ""; drawShop();
+  });
+  card.querySelectorAll("[data-s]").forEach(el=>{
+    const a = el.dataset.s;
+    if(a==="bq" || a==="bw" || a==="who" || a==="note") return;   // read on demand
+    el.onclick = ()=>{
+      kIdle();
+      if(a==="back"){ K.sScreen="list"; K.sOrd=null; K.sMsg=""; return drawShop(); }
+      const o = harvest(); if(!o) return;
+      const s = shopOf(o);
+      if(a==="bx"){ s.built.splice(+el.dataset.i,1); save(); return drawShop(); }
+      if(a==="savenote"){ K.sMsg = "Saved."; return drawShop(); }
+      if(a==="start"){
+        o.status = "working";
+        s.claimedBy = shopWho() || "shop";
+        s.startedAt = new Date().toISOString();
+        save(); ordBadge(); shopBadge();
+        K.sMsg = "Marked in the shop.";
+        return drawShop();
+      }
+      if(a==="finish"){
+        o.status = "done";
+        s.doneAt = new Date().toISOString();
+        s.doneBy = shopWho() || s.claimedBy || "shop";
+        save(); ordBadge(); shopBadge();
+        K.sScreen = "list"; K.sOrd = null; K.sMsg = "";
+        return drawShop();
+      }
+      if(a==="reopen"){
+        o.status = "working"; s.doneAt = ""; s.doneBy = "";
+        save(); ordBadge(); shopBadge();
+        K.sMsg = "Back in the shop.";
+        return drawShop();
+      }
+      if(a==="pdf"){
+        const was = el.textContent; el.textContent = "Building…"; el.disabled = true;
+        try{ ordPDF(o, true); }
+        catch(err){ K.sMsg = "Could not build that PDF: "+err.message; }
+        el.textContent = was; el.disabled = false;
+        return drawShop();
+      }
+    };
+  });
+}
+
 function wireK(){
   const card = $("kCard");
   card.querySelectorAll("[data-k]").forEach(el=>{
@@ -6382,6 +6616,11 @@ function wireK(){
     drawK();
   });
 }
+document.querySelectorAll("#kTabs [data-kt]").forEach(b=>b.onclick=()=>{
+  K.tab = b.dataset.kt;
+  if(K.tab === "shop"){ K.sScreen = "list"; K.sOrd = null; K.sMsg = ""; }
+  drawK();
+});
 $("kOffice").onclick = ()=>{
   if(officeNeedsSignIn()) return showSignIn();
   const pin = prompt("Office passcode");
@@ -6921,6 +7160,24 @@ renderDaily(); stamp(); refreshBadge();
 const ORD_NAME = {prefab:"Prefab order", wire:"Wire room", temp:"Temp panel"};
 const ORD_STAT = {"new":"New","working":"In the shop","done":"Done"};
 function ordOpen(){ return (db.orders||[]).filter(o=>o.status!=="done").length; }
+/* rebuild an order's own sheet from the record, for the office or the shop floor */
+function ordPDF(o, view){
+  if(!pdfReady()) throw new Error("the PDF builder did not load, reload the page");
+  let doc;
+  if(o.kind === "prefab")
+    doc = pfBuildPDF(o, o.no, {sketch:o.sketchImg||null, photos:[]});
+  else if(o.kind === "temp")
+    doc = tpBuildPDF(o, o.no, o.stock);
+  else if(o.kind === "wire"){
+    if(!o.wire) throw new Error("this order was sent in before the wire sheet was being kept");
+    if(typeof initWire === "function") initWire();
+    if(!window.wireAPI) throw new Error("open the Wire room tab once, then try again");
+    doc = window.wireAPI.buildPDFFrom(o.wire);
+  }
+  else throw new Error("no builder for this kind of order");
+  const name = o.no+(o.job?" - "+o.job:"")+".pdf";
+  if(view) pdfView(doc, name); else pdfSave(doc, name);
+}
 function ordBadge(){
   const el = $("ordBadge"); if(!el) return;
   const n = ordOpen();
@@ -6946,8 +7203,20 @@ function renderOrders(){
       list.map(o=>{
         const pr = o.priority==="Emergency" ? ' style="color:var(--red);font-weight:700"'
                  : o.priority==="Rush" ? ' style="color:var(--warn);font-weight:700"' : '';
+        const sh = o.shop || {};
+        const shopBlock = (sh.claimedBy || sh.doneAt || (sh.built||[]).length || (sh.notes||[]).length)
+          ? '<div class="flag good" style="margin-top:8px;text-align:left">'+
+            '<strong>From the shop floor</strong><br>'+
+            (sh.claimedBy ? esc(sh.claimedBy)+" started it "+esc(shopWhen(sh.startedAt))+"<br>" : "")+
+            ((sh.built||[]).length
+              ? "Built: "+sh.built.map(b=>esc((b.qty?b.qty+" ":"")+b.what)).join(", ")+"<br>"
+              : "")+
+            (sh.notes||[]).map(n=>esc(n.who||"shop")+": "+esc(n.text)+"<br>").join("")+
+            (sh.doneAt ? "<strong>Finished "+esc(shopWhen(sh.doneAt))+(sh.doneBy?" by "+esc(sh.doneBy):"")+"</strong>" : "")+
+            "</div>"
+          : "";
         const det = ordShown===o.id
-          ? '<tr class="odet"><td colspan="8"><pre>'+esc(o.summary||"")+'</pre>'+
+          ? '<tr class="odet"><td colspan="8"><pre>'+esc(o.summary||"")+'</pre>'+shopBlock+
             '<div class="row" style="margin-top:8px">'+
             '<a class="b sm" style="text-decoration:none;display:inline-flex;align-items:center" href="'+ordMail(o)+'">Reply to '+esc(o.by||"them")+'</a>'+
             '<button class="b ghost sm" data-ocopy="'+o.id+'">Copy the text</button>'+
@@ -6958,7 +7227,7 @@ function renderOrders(){
           '<td class="num half" data-l="Came in">'+(o.at?D.us(o.at.slice(0,10)):"")+'</td>'+
           '<td class="half r" data-l="Form">'+esc(ORD_NAME[o.kind]||o.kind||"")+'</td>'+
           '<td data-l="Job">'+esc(o.job||"")+(o.po?' <span class="mini">'+esc(o.po)+'</span>':"")+'</td>'+
-          '<td class="half" data-l="From">'+esc(o.by||"")+'</td>'+
+          '<td class="half" data-l="From">'+esc(o.by||"")+(o.src==="office"?' <span class="mini">(office)</span>':"")+'</td>'+
           '<td class="half r" data-l="Priority"'+pr+'>'+esc(o.priority||"Standard")+'</td>'+
           '<td data-l="Status"><select data-ost="'+o.id+'">'+Object.keys(ORD_STAT).map(k=>
             '<option value="'+k+'"'+(k===(o.status||"new")?" selected":"")+">"+ORD_STAT[k]+"</option>").join("")+"</select></td>"+
@@ -6979,26 +7248,9 @@ function renderOrders(){
   });
   $("ordList").querySelectorAll("[data-opdf]").forEach(el=>el.onclick=()=>{
     const o = db.orders.find(x=>x.id===el.dataset.opdf); if(!o) return;
-    if(!pdfReady()) return alert("The PDF builder did not load. Reload the page and try again.");
     const was = el.textContent; el.textContent = "…"; el.disabled = true;
-    try{
-      let doc;
-      if(o.kind === "prefab")
-        doc = pfBuildPDF(o, o.no, {sketch:o.sketchImg||null, photos:[]});
-      else if(o.kind === "temp")
-        doc = tpBuildPDF(o, o.no, o.stock);
-      else if(o.kind === "wire"){
-        if(!o.wire) throw new Error("this order was sent in before the wire sheet was being kept");
-        if(typeof initWire === "function") initWire();
-        if(!window.wireAPI) throw new Error("open the Wire room tab once, then try again");
-        doc = window.wireAPI.buildPDFFrom(o.wire);
-      }
-      else throw new Error("no builder for this kind of order");
-      pdfSave(doc, o.no+(o.job?" - "+o.job:"")+".pdf");
-    }catch(err){
-      console.error(err);
-      alert("Could not build that PDF: "+err.message);
-    }
+    try{ ordPDF(o, true); }
+    catch(err){ console.error(err); alert("Could not build that PDF: "+err.message); }
     el.textContent = was; el.disabled = false;
   });
   $("ordList").querySelectorAll("[data-ocopy]").forEach(el=>el.onclick=()=>{
@@ -7032,7 +7284,8 @@ function setMode(m){
   $("kiosk").hidden  = m !== "kiosk";
   $("office").hidden = m !== "office";
   save();
-  if(m === "kiosk"){ K = {screen:"pin", pin:"", empId:null, msg:"", calMon:null, selA:null, selB:null, kind:"Vacation", note:""}; drawK(); }
+  if(m === "kiosk"){ K = {screen:"pin", pin:"", empId:null, msg:"", calMon:null, selA:null, selB:null, kind:"Vacation", note:"",
+                           tab:"clock", sScreen:"list", sOrd:null, sWho:"", sMsg:""}; drawK(); }
   if(m === "field"){ fStock(); fillPoLists(); }
   window.scrollTo(0,0);
 }
@@ -7061,7 +7314,42 @@ document.querySelectorAll("#field nav button").forEach(b=>{
    door, exactly as it has always been. */
 function officeNeedsSignIn(){ return SB.on && !SB.local && SB.field; }
 function openOffice(){ setMode("office"); renderDaily(); refreshBadge(); renderSettings(); }
+/* Isaac writing an order up at the office desk: same forms the field uses,
+   same record, same queue. The only differences are the banner, no email step,
+   and the door back to the office needs no passcode because he just came
+   through it. */
+let OFFICE_ENTRY = false;
+function officeEnter(kind){
+  OFFICE_ENTRY = true;
+  setMode("field");
+  showField(kind);
+  $("fromOffice").hidden = false;
+  $("fClockTab").hidden = true;
+  if(kind === "prefab"){
+    try{ const who = localStorage.getItem("adman_office_by") || ""; if(who && !$("pfBy").value) $("pfBy").value = who; }catch(e){}
+    if(!$("pfEmail").value) $("pfEmail").value = (SB.user && SB.user.email) || "prefab@admanelectric.com";
+  }
+  if(kind === "wire"){
+    try{
+      const who = localStorage.getItem("adman_office_by") || "";
+      const el = document.querySelector('#v-wire [data-j="orderedBy"]');
+      if(who && el && !el.value){ el.value = who; el.dispatchEvent(new Event("input", {bubbles:true})); }
+    }catch(e){}
+  }
+}
+function officeLeave(){
+  OFFICE_ENTRY = false;
+  $("fromOffice").hidden = true;
+  $("fClockTab").hidden = false;
+  openOffice();
+  const b = document.querySelector('#office nav button[data-v="orders"]');
+  if(b) b.click();
+}
+$("fromOfficeBack").onclick = officeLeave;
+$("ordNewPf").onclick = ()=>officeEnter("prefab");
+$("ordNewWr").onclick = ()=>officeEnter("wire");
 $("fOffice").onclick = ()=>{
+  if(OFFICE_ENTRY) return officeLeave();
   if(officeNeedsSignIn()) return showSignIn();
   const pin = prompt("Office passcode");
   if(pin === null) return;
@@ -7141,6 +7429,10 @@ function workNo(prefix){
 function saveOrder(o){
   db.orders = db.orders || [];
   o.id = o.id || uid();
+  if(OFFICE_ENTRY){
+    o.src = "office";
+    try{ if(o.by) localStorage.setItem("adman_office_by", o.by); }catch(e){}
+  }
   o.at = o.at || new Date().toISOString();
   o.status = o.status || "new";
   db.orders.push(o);
@@ -7220,6 +7512,47 @@ function pdfFoot(doc){
   }
 }
 function pdfSave(doc, name){ doc.save(name.replace(/[\\/:*?"<>|]/g,"-")); }
+/* Show a PDF without leaving the app. A desktop browser draws it in a panel
+   over the page; a phone or iPad only ever draws the first page inside a panel,
+   so there it opens in its own tab, which is the device's full PDF viewer with
+   every page and its own share button. */
+const PDF_TAB = (()=>{
+  const ua = navigator.userAgent || "";
+  const ipad = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+  return ipad || /iPhone|iPad|iPod|Android/i.test(ua);
+})();
+let pdfViewUrl = null;
+function pdfView(doc, name){
+  const safe = name.replace(/[\\/:*?"<>|]/g,"-");
+  const blob = doc.output("blob");
+  if(pdfViewUrl) URL.revokeObjectURL(pdfViewUrl);
+  pdfViewUrl = URL.createObjectURL(blob);
+  /* no built-in viewer in this browser: a panel would just be white */
+  const canFrame = navigator.pdfViewerEnabled !== false;
+  if(PDF_TAB || !canFrame){
+    const w = window.open(pdfViewUrl, "_blank");
+    if(!w) pdfSave(doc, name);          // a blocked pop-up still gets the file
+    return;
+  }
+  let v = $("pdfPane");
+  if(!v){
+    v = document.createElement("div"); v.id = "pdfPane";
+    v.innerHTML = '<div class="pv-top"><b id="pvName"></b><span class="spacer"></span>'+
+      '<button class="b ghost sm" id="pvDl">Download</button>'+
+      '<button class="b ghost sm" id="pvPrint">Print</button>'+
+      '<button class="b sm" id="pvClose">Close</button></div>'+
+      '<iframe id="pvFrame" title="PDF"></iframe>';
+    document.body.appendChild(v);
+    $("pvClose").onclick = ()=>{ v.hidden = true; $("pvFrame").src = "about:blank"; document.body.classList.remove("pv-open"); };
+    $("pvPrint").onclick = ()=>{ try{ $("pvFrame").contentWindow.print(); }catch(e){ window.open(pdfViewUrl, "_blank"); } };
+    document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !v.hidden) $("pvClose").click(); });
+  }
+  $("pvName").textContent = safe;
+  $("pvDl").onclick = ()=>{ const a=document.createElement("a"); a.href=pdfViewUrl; a.download=safe;
+                            document.body.appendChild(a); a.click(); a.remove(); };
+  $("pvFrame").src = pdfViewUrl;
+  v.hidden = false; document.body.classList.add("pv-open");
+}
 
 /* result panel shared by the forms */
 let blobUrls = {};
@@ -7234,12 +7567,28 @@ function canShareFile(file){
 function showResult(outId, o, blob, fname){
   const el = $(outId);
   if(blobUrls[outId]) URL.revokeObjectURL(blobUrls[outId]);
+  if(OFFICE_ENTRY){
+    if(blob) blobUrls[outId] = URL.createObjectURL(blob);
+    el.innerHTML = '<div class="res"><h4>'+esc(o.no)+' is on the shop queue</h4>'+
+      '<div class="mini">'+esc(o.kindName)+' · '+esc(o.job||"no job")+(o.po?" · "+esc(o.po):"")+' · '+esc(o.priority||"Standard")+'</div>'+
+      '<div class="rlinks">'+
+        '<button type="button" class="rbtn" data-view="1">Open the PDF</button>'+
+        (blob ? '<a class="rbtn alt" href="'+blobUrls[outId]+'" download="'+esc(fname)+'">Download the PDF</a>' : "")+
+        '<button type="button" class="rbtn alt" data-back="1">Back to the office</button>'+
+      '</div>'+
+      '<div class="rnote">The shop floor sees it on the Shop orders tab of the kiosk the next time it syncs, and it is under Orders in the office now.</div></div>';
+    el.querySelector("[data-view]").onclick = ()=>{ try{ ordPDF(o, true); }catch(err){ alert("Could not build that PDF: "+err.message); } };
+    el.querySelector("[data-back]").onclick = officeLeave;
+    el.querySelector(".res").scrollIntoView({behavior:"smooth", block:"nearest"});
+    return;
+  }
   const file = blob ? new File([blob], fname, {type:"application/pdf"}) : null;
   const share = file && canShareFile(file);
   let dl = "";
   if(blob){
     blobUrls[outId] = URL.createObjectURL(blob);
-    dl = '<a class="rbtn alt" href="'+blobUrls[outId]+'" download="'+esc(fname)+'">Download the PDF</a>';
+    dl = '<button type="button" class="rbtn alt" data-view="1">Open the PDF</button>'+
+         '<a class="rbtn alt" href="'+blobUrls[outId]+'" download="'+esc(fname)+'">Download the PDF</a>';
   }
   el.innerHTML = '<div class="res"><h4>'+esc(o.no)+' is logged with the shop</h4>'+
     '<div class="mini">'+esc(o.kindName)+' · '+esc(o.job||"no job")+(o.po?" · "+esc(o.po):"")+' · '+esc(o.priority||"Standard")+'</div>'+
@@ -7251,6 +7600,8 @@ function showResult(outId, o, blob, fname){
         ? 'Picks Mail from the share sheet with the PDF already attached and the order written into the message.'
         : 'Saves the PDF to this device and opens the email at the same time. Drag the PDF in, or attach it from your downloads. The whole order is written into the body either way.')+
     ' Isaac can see it under Orders in the office as well.</div></div>';
+  const vb = el.querySelector("[data-view]");
+  if(vb) vb.onclick = ()=>{ try{ ordPDF(o, true); }catch(err){ alert("Could not build that PDF: "+err.message); } };
   el.querySelector("[data-send]").onclick = async ()=>{
     if(file && canShareFile(file)){
       try{
@@ -7562,7 +7913,7 @@ function bad(id, is){ $(id).classList.toggle("err-field", !!is); return !is; }
 function pfValid(d){
   let ok = true;
   ok = bad("pfBy", !d.by) && ok;
-  ok = bad("pfEmail", !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email)) && ok;
+  ok = bad("pfEmail", !OFFICE_ENTRY && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email)) && ok;
   ok = bad("pfJob", !d.job) && ok;
   if(!ok){ ftoast("Fill in the highlighted boxes.", true); return false; }
   if(!d.items.length && !d.bends.length && !d.photos && !d.sketch){
