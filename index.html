@@ -1985,15 +1985,26 @@ function initWire(){
   /* per-conductor length (a home run can drop off the spool early) */
   function pullSets(p){ return Math.max(1, parseInt(p.sets) || 1); }
   function pullTotal(p){ const m = wasteMult(); return conductorsOf(p).list.reduce((a,c) => a + c.len, 0) * m * pullSets(p); }
-  /* "Drop HR 1 at 50', HR 2 continues to 125'" for spools with staggered lengths */
+  /* How the man at the spool works it: start on the longest home run, and after
+     each cut he only pulls the difference down to the next one. Three home runs
+     at 100', 95' and 80' read
+       "Sever on HR-3, pull 5', sever on HR-2, pull 15', sever on HR-1, pull the
+        remaining footage"
+     because 100 to 95 is the 5 and 95 to 80 is the 15. Home runs that share a
+     length are severed together on the same call. */
   function spoolPlan(p){
     const C = conductorsOf(p);
     if(!C.varied) return '';
     const used = C.lines.filter(L => (L.parsed.hots.length || L.nN) && L.len > 0);
     const byLen = {};
     used.forEach(L => (byLen[L.len] = byLen[L.len] || []).push(L.name));
-    const ls = Object.keys(byLen).map(Number).sort((a,b) => a - b);
-    const parts = ls.map((len, i) => i < ls.length - 1 ? `drop ${byLen[len].join(' & ')} at ${fmt(len)}'` : `${byLen[len].join(' & ')} continue${byLen[len].length > 1 ? '' : 's'} to ${fmt(len)}'`);
+    const ls = Object.keys(byLen).map(Number).sort((a,b) => b - a);   // longest first
+    const parts = [];
+    ls.forEach((len, i) => {
+      parts.push(`sever on ${byLen[len].join(' & ')}`);
+      const next = ls[i + 1];
+      parts.push(next == null ? 'pull the remaining footage' : `pull ${fmt(len - next)}'`);
+    });
     const t = parts.join(', ');
     return t.charAt(0).toUpperCase() + t.slice(1);
   }
